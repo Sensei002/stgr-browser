@@ -142,7 +142,7 @@ STGR Browser **never**:
 
 | 🌐 | [steigerdojo.mvp.bd](https://www.steigerdojo.mvp.bd) |
 |---|---|
-| 🐙 | GitHub: [@steigerdojo](https://github.com/steigerdojo) |
+| 🐙 | GitHub: [@Sensei002](https://github.com/Sensei002) |
 | 📧 | Contact: steigerdojo@email.com |
 
 > *"Empowering the next generation of developers — one open-source project at a time."*
