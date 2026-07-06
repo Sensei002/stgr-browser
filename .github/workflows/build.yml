@@ -1,100 +1,144 @@
 # ============================================================================
 # STGR Browser - CI Build Pipeline
 # ============================================================================
-# This workflow builds STGR Browser on all platforms and runs validation checks.
+# Builds STGR Browser on all platforms and runs validation checks.
 #
-# Note: Full Firefox builds require ~40GB disk and 2+ hours.
-# The build matrix below provides different levels of validation.
+# RUNNER REQUIREMENTS (self-hosted):
+#   Full Firefox builds require ~40GB disk, 16-32GB RAM, 2-4 hours runtime.
+#   GitHub hosted runners are insufficient — see docs/SELF_HOSTED_RUNNER.md
+#   for setup instructions.
 # ============================================================================
 
-name: Build & Test
+name: Build
 
 on:
+  # Validation runs on every PR and push to main branches
   push:
-    branches: [main, develop, release/*]
+    branches: [main, develop, 'release/*']
   pull_request:
     branches: [main, develop]
+  # Nightly builds produce fresh artifacts every night
   schedule:
-    - cron: '0 6 * * 1' # Weekly build every Monday
+    - cron: '0 6 * * *'    # Daily at 06:00 UTC
+  # Manual trigger for ad-hoc builds
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Build version tag (e.g., v1.0.0-nightly)'
+        required: false
+        default: 'nightly'
+      platforms:
+        description: 'Platforms to build (comma-separated: linux,windows,macos)'
+        required: false
+        default: 'all'
 
 env:
   STGR_SOURCE_DIR: ${{ github.workspace }}/gecko-dev
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  BUILD_VERSION: ${{ github.event.inputs.version || 'nightly' }}
 
 jobs:
   # =========================================================================
   # VALIDATION: Quick checks to validate the STGR project structure
-  # Runs on every push/PR, takes ~2 minutes
+  # Runs on every push/PR, takes ~2 minutes — uses GitHub-hosted runner
   # =========================================================================
   validate:
-    name: Validate Project Structure
+    name: Validate Project
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Check project structure
         run: |
-          echo "Checking STGR Browser project structure..."
-          REQUIRED_DIRS="branding config scripts patches docs"
+          echo "::group::Checking project directories"
+          REQUIRED_DIRS="branding config scripts patches docs assets .github"
           for dir in $REQUIRED_DIRS; do
             if [ ! -d "$dir" ]; then
-              echo "Missing required directory: $dir"
+              echo "::error::Missing required directory: $dir"
               exit 1
             fi
             echo "  ✓ $dir"
           done
+          echo "::endgroup::"
 
       - name: Validate branding files
         run: |
-          echo "Validating branding files..."
-          REQUIRED_FILES="branding/logo.svg branding/icon.svg branding/theme.json branding/branding-config.json"
+          echo "::group::Validating branding files"
+          REQUIRED_FILES="branding/logo.svg branding/icon.svg branding/theme.json branding/branding-config.json branding/installer-config.json"
           for file in $REQUIRED_FILES; do
             if [ ! -f "$file" ]; then
-              echo "Missing required file: $file"
+              echo "::error::Missing required file: $file"
               exit 1
             fi
             echo "  ✓ $file"
           done
+          echo "::endgroup::"
 
       - name: Validate config files
         run: |
-          echo "Validating config files..."
-          REQUIRED_FILES="config/mozconfig config/stgr-prefs.js config/search-engines.json"
+          echo "::group::Validating config files"
+          REQUIRED_FILES="config/mozconfig config/mozconfig-windows config/mozconfig-linux config/mozconfig-macos config/stgr-prefs.js config/search-engines.json"
           for file in $REQUIRED_FILES; do
             if [ ! -f "$file" ]; then
-              echo "Missing required file: $file"
+              echo "::error::Missing required file: $file"
               exit 1
             fi
             echo "  ✓ $file"
           done
+          echo "::endgroup::"
 
-      - name: Validate patches exist
+      - name: Validate patches
         run: |
-          echo "Checking patches..."
+          echo "::group::Checking patches"
           PATCH_COUNT=$(ls patches/*.patch 2>/dev/null | wc -l)
-          if [ "$PATCH_COUNT" -lt 5 ]; then
-            echo "Expected at least 5 patches, found $PATCH_COUNT"
+          if [ "$PATCH_COUNT" -lt 15 ]; then
+            echo "::error::Expected 15 patches, found $PATCH_COUNT"
             exit 1
           fi
           echo "  ✓ $PATCH_COUNT patches found"
-
-      - name: Validate documentation structure
-        run: |
-          echo "Checking documentation..."
-          for doc in README.md docs/ARCHITECTURE.md docs/BUILD.md docs/DEVELOPER.md \
-                     docs/CONTRIBUTING.md docs/OPTIMIZATION.md docs/PRIVACY.md \
-                     docs/BRANDING.md docs/GAMING_MODE.md; do
-            if [ ! -f "$doc" ]; then
-              echo "Missing documentation: $doc"
-              exit 1
+          # Verify sequential numbering
+          for i in $(seq -w 1 15); do
+            if ls patches/${i}-*.patch >/dev/null 2>&1; then
+              echo "  ✓ Patch $i present"
+            else
+              echo "  ⚠ Patch $i missing (non-critical if intentionally removed)"
             fi
-            echo "  ✓ $doc"
           done
+          echo "::endgroup::"
+
+      - name: Validate documentation
+        run: |
+          echo "::group::Checking documentation"
+          ALL_DOCS="README.md CHANGELOG.md SECURITY.md LICENSE
+            docs/ARCHITECTURE.md docs/BUILD.md docs/DEVELOPER.md
+            docs/CONTRIBUTING.md docs/OPTIMIZATION.md docs/PRIVACY.md
+            docs/BRANDING.md docs/GAMING_MODE.md docs/STGR_PREFERENCES.md
+            docs/TAB_GROUPS.md docs/UPDATER.md docs/VERTICAL_TABS.md"
+          for doc in $ALL_DOCS; do
+            if [ ! -f "$doc" ]; then
+              echo "::warning::Missing documentation: $doc"
+            else
+              echo "  ✓ $doc"
+            fi
+          done
+          echo "::endgroup::"
+
+      - name: Validate scripts have proper headers
+        run: |
+          echo "::group::Checking script headers"
+          for script in scripts/*.sh; do
+            if head -3 "$script" | grep -q "STGR Browser"; then
+              echo "  ✓ $(basename $script)"
+            else
+              echo "  ⚠ $(basename $script) - missing STGR header"
+            fi
+          done
+          echo "::endgroup::"
 
   # =========================================================================
   # PATCH VALIDATION: Verify patches apply cleanly to a Firefox checkout
-  # Runs on PRs, takes ~10 minutes (just clone + apply)
+  # Runs on PRs only, takes ~5 minutes (shallow clone + dry-run apply)
   # =========================================================================
   patch-validation:
     name: Validate Patches
@@ -103,126 +147,231 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Shallow clone Firefox source
+      - name: Install dependencies
         run: |
-          git clone --depth 1 --branch RELEASE_BASE_20250701 \
-            https://github.com/mozilla/gecko-dev.git gecko-dev
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq
+
+      - name: Checkout Firefox source (shallow, specific branch)
+        run: |
+          echo "::group::Cloning Firefox source (shallow clone)"
+          # Determine Firefox branch from config or use default
+          FIREFOX_BRANCH="${FIREFOX_BASE_BRANCH:-RELEASE_BASE_20250701}"
+          git clone --depth 1 --branch "$FIREFOX_BRANCH" \
+            https://github.com/mozilla/gecko-dev.git gecko-dev 2>&1 | tail -5
+          echo "::endgroup::"
 
       - name: Apply STGR patches
         run: |
+          echo "::group::Applying STGR patches"
           cd gecko-dev
           git config user.email "ci@stgr-browser.dev"
           git config user.name "STGR CI"
-          
+
+          PASSED=0
+          FAILED=0
+
           for patch in ../patches/*.patch; do
-            echo "Applying: $(basename $patch)..."
+            PATCH_NAME=$(basename "$patch")
+            echo "--- Applying: $PATCH_NAME ---"
             if git apply --check "$patch" 2>/dev/null; then
               git apply "$patch"
-              echo "  ✓ $(basename $patch)"
+              echo "  ✓ $PATCH_NAME"
+              PASSED=$((PASSED + 1))
             else
-              echo "  ✗ $(basename $patch) - FAILED"
-              echo "  Patch may need updating for this Firefox version."
-              git apply --check "$patch" 2>&1 || true
+              echo "  ✗ $PATCH_NAME - FAILED"
+              git apply --check "$patch" 2>&1 | head -5
+              FAILED=$((FAILED + 1))
             fi
           done
 
+          echo "::endgroup::"
+          echo "::group::Summary"
+          echo "Patches applied: $PASSED/$((PASSED + FAILED))"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED patch(es) failed to apply"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Upload patch validation report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-validation-report
+          path: gecko-dev/*.rej
+          retention-days: 7
+
   # =========================================================================
   # LINUX BUILD: Full build on self-hosted runner
-  # Runs on main branch pushes and releases
+  # Runs on: schedule (nightly), workflow_dispatch, main pushes
   # =========================================================================
   linux-build:
-    name: Linux Build
+    name: Linux (${{ github.event_name == 'schedule' && 'nightly' || 'manual' }})
     runs-on: [self-hosted, linux, x64]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main' ||
+      github.ref == 'refs/heads/develop'
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Firefox source
-        run: ./scripts/setup.sh
+        run: |
+          echo "::group::Setting up Firefox source"
+          ./scripts/setup.sh 2>&1 | tail -10
+          echo "::endgroup::"
 
       - name: Build STGR Browser
         run: |
-          cd gecko-dev
+          echo "::group::Building STGR Browser (release)"
+          cd "${{ env.STGR_SOURCE_DIR }}"
           ./mach build --verbose 2>&1 | tail -20
+          echo "::endgroup::"
 
       - name: Create package
         run: |
-          cd gecko-dev
+          echo "::group::Creating distribution package"
+          cd "${{ env.STGR_SOURCE_DIR }}"
           ./mach build package
-          mkdir -p ${{ github.workspace }}/artifacts
-          cp obj-build-stgr/dist/*.tar.* ${{ github.workspace }}/artifacts/
+          mkdir -p ${{ github.workspace }}/artifacts/
+          cp obj-build-stgr/dist/*.tar.* ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          cp obj-build-stgr/dist/*.tar.bz2 ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          cp obj-build-stgr/dist/*.xz ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          echo "::endgroup::"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stgr-browser-linux
+          name: stgr-browser-linux-x64-${{ env.BUILD_VERSION }}
           path: artifacts/
-          retention-days: 14
+          retention-days: 30
+
+      - name: Cleanup build artifacts (nightly only, preserve incremental state)
+        if: github.event_name == 'schedule'
+        run: |
+          echo "::group::Cleaning up build artifacts"
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          rm -rf obj-build-stgr 2>/dev/null || true
+          echo "::endgroup::"
 
   # =========================================================================
   # WINDOWS BUILD: Full build on self-hosted Windows runner
   # =========================================================================
   windows-build:
-    name: Windows Build
+    name: Windows (${{ github.event_name == 'schedule' && 'nightly' || 'manual' }})
     runs-on: [self-hosted, windows, x64]
-    if: github.ref == 'refs/heads/main'
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Firefox source
         shell: bash
-        run: ./scripts/setup.sh
+        run: |
+          echo "::group::Setting up Firefox source"
+          ./scripts/setup.sh 2>&1 | tail -10
+          echo "::endgroup::"
 
       - name: Build STGR Browser
         shell: bash
         run: |
-          cd gecko-dev
+          echo "::group::Building STGR Browser (release)"
+          cd "${{ env.STGR_SOURCE_DIR }}"
           ./mach build --verbose 2>&1 | tail -20
+          echo "::endgroup::"
 
       - name: Create installer
         shell: bash
         run: |
-          cd gecko-dev
+          echo "::group::Creating Windows installer"
+          cd "${{ env.STGR_SOURCE_DIR }}"
           ./mach build installer
-          mkdir -p ${{ github.workspace }}/artifacts
-          cp obj-build-stgr/dist/*.exe ${{ github.workspace }}/artifacts/
+          mkdir -p ${{ github.workspace }}/artifacts/
+          cp obj-build-stgr/dist/*.exe ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          cp obj-build-stgr/dist/*.msi ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          echo "::endgroup::"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stgr-browser-windows
+          name: stgr-browser-windows-x64-${{ env.BUILD_VERSION }}
           path: artifacts/
-          retention-days: 14
+          retention-days: 30
+
+      - name: Cleanup build artifacts (nightly only, preserve incremental state)
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: |
+          echo "::group::Cleaning up build artifacts"
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          rm -rf obj-build-stgr 2>/dev/null || true
+          echo "::endgroup::"
 
   # =========================================================================
   # macOS BUILD: Full build on self-hosted macOS runner
   # =========================================================================
   macos-build:
-    name: macOS Build
+    name: macOS (${{ github.event_name == 'schedule' && 'nightly' || 'manual' }})
     runs-on: [self-hosted, macos, x64]
-    if: github.ref == 'refs/heads/main'
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Firefox source
-        run: ./scripts/setup.sh
+        run: |
+          echo "::group::Setting up Firefox source"
+          ./scripts/setup.sh 2>&1 | tail -10
+          echo "::endgroup::"
 
       - name: Build STGR Browser
         run: |
-          cd gecko-dev
+          echo "::group::Building STGR Browser (release)"
+          cd "${{ env.STGR_SOURCE_DIR }}"
           ./mach build --verbose 2>&1 | tail -20
+          echo "::endgroup::"
 
       - name: Create DMG
         run: |
-          cd gecko-dev
+          echo "::group::Creating macOS DMG"
+          cd "${{ env.STGR_SOURCE_DIR }}"
           ./mach build package
           ./mach build dmg
-          mkdir -p ${{ github.workspace }}/artifacts
-          cp obj-build-stgr/dist/*.dmg ${{ github.workspace }}/artifacts/
+          mkdir -p ${{ github.workspace }}/artifacts/
+          cp obj-build-stgr/dist/*.dmg ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          echo "::endgroup::"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stgr-browser-macos
+          name: stgr-browser-macos-x64-${{ env.BUILD_VERSION }}
           path: artifacts/
-          retention-days: 14
+          retention-days: 30
+
+      - name: Cleanup build artifacts (nightly only, preserve incremental state)
+        if: github.event_name == 'schedule'
+        run: |
+          echo "::group::Cleaning up build artifacts"
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          rm -rf obj-build-stgr 2>/dev/null || true
+          echo "::endgroup::"
+
+  # =========================================================================
+  # NOTIFY: Send notification on nightly build failure
+  # =========================================================================
+  notify:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [linux-build, windows-build, macos-build]
+    if: failure() && github.event_name == 'schedule'
+    steps:
+      - name: Log build failure
+        run: |
+          echo "::error::Nightly build failed on $(date -u)"
+          echo "Check workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

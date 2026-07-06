@@ -5,6 +5,15 @@
   <em>Empowering the next generation of developers</em>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Sensei002/stgr-browser/actions/workflows/build.yml"><img src="https://github.com/Sensei002/stgr-browser/actions/workflows/build.yml/badge.svg?branch=main" alt="Build"></a>
+  <a href="https://github.com/Sensei002/stgr-browser/actions/workflows/lint.yml"><img src="https://github.com/Sensei002/stgr-browser/actions/workflows/lint.yml/badge.svg?branch=main" alt="Lint"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Sensei002/stgr-browser" alt="License: MPL-2.0"></a>
+  <a href="https://github.com/Sensei002/stgr-browser/releases"><img src="https://img.shields.io/github/v/release/Sensei002/stgr-browser" alt="Latest Release"></a>
+  <a href="https://github.com/Sensei002/stgr-browser/issues"><img src="https://img.shields.io/github/issues/Sensei002/stgr-browser" alt="Issues"></a>
+  <a href="https://github.com/Sensei002/stgr-browser/stargazers"><img src="https://img.shields.io/github/stars/Sensei002/stgr-browser" alt="Stars"></a>
+</p>
+
 # STGR Browser
 
 **A lightweight, privacy-first, gaming-focused browser built on Mozilla Firefox / Gecko.**
@@ -36,6 +45,20 @@ STGR Browser is a fork of Mozilla Firefox that has been stripped of telemetry, t
 | Gaming Mode | ~30% reduction |
 
 > *Note: Actual memory usage depends on website content and extensions. Targets represent best-effort optimizations within Firefox's architecture.*
+
+## 🤖 CI / Build Status
+
+| Trigger | Linux | Windows | macOS |
+|---------|:-----:|:-------:|:----:|
+| **Nightly** (daily 06:00 UTC) | ✅ Self-hosted | ✅ Self-hosted | ✅ Self-hosted |
+| **Push to main** | ✅ Self-hosted | ✅ Self-hosted | ✅ Self-hosted |
+| **Release tag** | ✅ Self-hosted | ✅ Self-hosted | ✅ Self-hosted |
+| **PR validation** | ✅ GitHub-hosted | ✅ GitHub-hosted | ✅ GitHub-hosted |
+| **Lint/quality** | ✅ GitHub-hosted | ✅ GitHub-hosted | ✅ GitHub-hosted |
+
+> ⚠️ **Full Firefox builds require self-hosted runners** (40GB+ disk, 16-32GB RAM).
+> See [Self-Hosted Runner Guide](docs/SELF_HOSTED_RUNNER.md) to set up build machines.
+> Validation & lint jobs run on GitHub-hosted runners for every PR.
 
 ## 🔧 Quick Start
 

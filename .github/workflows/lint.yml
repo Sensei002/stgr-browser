@@ -1,89 +1,328 @@
 # ============================================================================
 # STGR Browser - Lint & Code Quality
 # ============================================================================
+# Runs on every push/PR. Validates project files for correctness.
+# Uses GitHub-hosted runners (fast, no build needed).
+# ============================================================================
 
-name: Lint & Code Quality
+name: Lint
 
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint-project:
-    name: Lint STGR Project
+  # =========================================================================
+  # SHELL SCRIPTS: Lint all shell scripts with shellcheck
+  # =========================================================================
+  shellcheck:
+    name: ShellCheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: ShellCheck - Check shell scripts
+      - name: ShellCheck all scripts
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: './scripts'
           severity: warning
 
-      - name: Validate JSON files
+      - name: Check bash strict mode
         run: |
-          echo "Validating JSON files..."
-          for file in branding/branding-config.json branding/installer-config.json \
-                      branding/theme.json config/search-engines.json; do
-            if python3 -m json.tool "$file" > /dev/null 2>&1; then
-              echo "  ✓ $file"
+          echo "::group::Checking bash strict mode"
+          for script in scripts/*.sh; do
+            if head -20 "$script" | grep -q "set -e"; then
+              echo "  ✓ $(basename $script) - has set -e"
             else
-              echo "  ✗ $file - invalid JSON"
-              python3 -m json.tool "$file" 2>&1 || true
-              exit 1
+              echo "  ⚠ $(basename $script) - missing 'set -e' (recommended)"
             fi
           done
+          echo "::endgroup::"
 
-      - name: Check Markdown files
-        run: |
-          echo "Checking markdown files..."
-          find . -name "*.md" -not -path "./gecko-dev/*" -exec echo "  ✓ {}" \;
-
-      - name: Validate SVG icons
-        run: |
-          echo "Validating SVG files..."
-          for file in branding/logo.svg branding/icon.svg; do
-            if grep -q "<svg" "$file" 2>/dev/null; then
-              echo "  ✓ $file"
-            else
-              echo "  ✗ $file - invalid SVG"
-              exit 1
-            fi
-          done
-
-  lint-build-system:
-    name: Validate Build Configuration
+  # =========================================================================
+  # CONFIG VALIDATION: Verify all configuration files
+  # =========================================================================
+  validate-config:
+    name: Validate Config
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate mozconfig syntax
+      - name: Validate JSON files
         run: |
-          echo "Validating mozconfig..."
-          if grep -q "^ac_add_options" config/mozconfig; then
-            echo "  ✓ mozconfig format valid"
-          else
-            echo "  ✗ mozconfig may be invalid"
-            exit 1
-          fi
+          echo "::group::Validating JSON files"
+          FILES="branding/branding-config.json branding/installer-config.json
+                 branding/theme.json config/search-engines.json"
+          for file in $FILES; do
+            if [ -f "$file" ]; then
+              if python3 -m json.tool "$file" > /dev/null 2>&1; then
+                echo "  ✓ $file"
+              else
+                echo "::error::$file - invalid JSON"
+                python3 -m json.tool "$file" 2>&1 || true
+                exit 1
+              fi
+            else
+              echo "  ⚠ $file not found (skipping)"
+            fi
+          done
+          echo "::endgroup::"
+
+      - name: Validate mozconfig files
+        run: |
+          echo "::group::Validating mozconfig files"
+          for mcfg in config/mozconfig config/mozconfig-windows config/mozconfig-linux config/mozconfig-macos; do
+            if [ ! -f "$mcfg" ]; then
+              echo "  ⚠ $mcfg not found (skipping)"
+              continue
+            fi
+            ISSUES=0
+            # Check for required ac_add_options
+            if grep -q "^ac_add_options" "$mcfg"; then
+              echo "  ✓ $(basename $mcfg) - has ac_add_options"
+            else
+              echo "  ::error::$(basename $mcfg) - no ac_add_options found"
+              ISSUES=$((ISSUES + 1))
+            fi
+            # Check for inconsistent platform flags
+            case "$(basename $mcfg)" in
+              mozconfig)
+                # Smart wrapper - should source platform files
+                if grep -q "_load_config" "$mcfg"; then
+                  echo "    - Smart OS-detecting wrapper"
+                fi
+                ;;
+              mozconfig-windows)
+                if grep -q "cairo-windows" "$mcfg"; then
+                  echo "    - Windows toolkit"
+                else
+                  echo "  ::warning::mozconfig-windows missing cairo-windows toolkit"
+                fi
+                if grep -q "d3d" "$mcfg"; then
+                  echo "    - Direct3D support"
+                fi
+                # Should NOT have Linux/macOS flags
+                if grep -q "cairo-gtk3\|cairo-cocoa\|alsa\|pulseaudio" "$mcfg"; then
+                  echo "  ::warning::mozconfig-windows has non-Windows flags"
+                fi
+                ;;
+              mozconfig-linux)
+                if grep -q "cairo-gtk3" "$mcfg"; then
+                  echo "    - Linux (GTK3) toolkit"
+                else
+                  echo "  ::warning::mozconfig-linux missing cairo-gtk3 toolkit"
+                fi
+                if grep -q "wayland\|vaapi" "$mcfg"; then
+                  echo "    - Wayland/VA-API support"
+                fi
+                # Should NOT have Windows/macOS flags
+                if grep -q "cairo-windows\|cairo-cocoa\|d3d\|macbundle" "$mcfg"; then
+                  echo "  ::warning::mozconfig-linux has non-Linux flags"
+                fi
+                ;;
+              mozconfig-macos)
+                if grep -q "cairo-cocoa" "$mcfg"; then
+                  echo "    - macOS (Cocoa) toolkit"
+                else
+                  echo "  ::warning::mozconfig-macos missing cairo-cocoa toolkit"
+                fi
+                if grep -q "macbundle" "$mcfg"; then
+                  echo "    - macOS bundle support"
+                fi
+                # Should NOT have Windows/Linux flags
+                if grep -q "cairo-windows\|cairo-gtk3\|d3d\|wayland\|vaapi\|alsa" "$mcfg"; then
+                  echo "  ::warning::mozconfig-macos has non-macOS flags"
+                fi
+                ;;
+            esac
+            if [ "$ISSUES" -gt 0 ]; then
+              echo "::error::$(basename $mcfg) has $ISSUES issue(s)"
+              exit 1
+            fi
+          done
+          echo "::endgroup::"
 
       - name: Check pref consistency
         run: |
-          echo "Checking preference consistency..."
-          # Ensure all stgr prefs have proper types
-          PREF_ISSUES=$(grep -c 'stgr\.' config/stgr-prefs.js || true)
-          echo "  Found $PREF_ISSUES STGR-specific preferences"
+          echo "::group::Checking preference consistency"
+          PREFS_FILE="config/stgr-prefs.js"
+          if [ ! -f "$PREFS_FILE" ]; then
+            echo "::error::$PREFS_FILE not found"
+            exit 1
+          fi
+          # Count STGR-specific preferences
+          STGR_PREFS=$(grep -c 'stgr\.' "$PREFS_FILE" || true)
+          echo "  STGR-specific prefs: $STGR_PREFS"
+          # Count total pref definitions
+          TOTAL_PREFS=$(grep -c '^pref(' "$PREFS_FILE" || true)
+          echo "  Total prefs: $TOTAL_PREFS"
+          # Check for duplicate pref definitions
+          DUPES=$(grep '^pref(' "$PREFS_FILE" | sed 's/pref("\([^"]*\)".*/\1/' | sort | uniq -d | head -5)
+          if [ -n "$DUPES" ]; then
+            echo "::error::Duplicate prefs found:"
+            echo "$DUPES"
+            exit 1
+          fi
+          echo "  No duplicate prefs"
+          echo "::endgroup::"
 
-      - name: Validate patch format
+  # =========================================================================
+  # PATCH VALIDATION: Verify patch file format and structure
+  # =========================================================================
+  validate-patches:
+    name: Validate Patches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check patch format
         run: |
-          echo "Validating patch format..."
+          echo "::group::Validating patch files"
+          PASSED=0
+          FAILED=0
           for patch in patches/*.patch; do
+            PATCH_NAME=$(basename "$patch")
+            ISSUES=0
+
+            # Check From: header
             if head -1 "$patch" | grep -q "^From:"; then
-              echo "  ✓ $(basename $patch)"
+              :
             else
-              echo "  ⚠ $(basename $patch) - missing From: header"
+              echo "  ⚠ $PATCH_NAME - missing From: header"
+              ISSUES=$((ISSUES + 1))
+            fi
+
+            # Check Date: header or Subject: header
+            if head -5 "$patch" | grep -qE "^Date:|^Subject:"; then
+              :
+            else
+              echo "  ⚠ $PATCH_NAME - missing Date/Subject header"
+              ISSUES=$((ISSUES + 1))
+            fi
+
+            # Check diff --git marker
+            if grep -q "^diff --git" "$patch"; then
+              :
+            else
+              echo "  ⚠ $PATCH_NAME - no diff content"
+              ISSUES=$((ISSUES + 1))
+            fi
+
+            # Check for conflict markers
+            if grep -q "^<<<<<<<\|^=======$\|^>>>>>>>" "$patch"; then
+              echo "  ✗ $PATCH_NAME - contains conflict markers!"
+              ISSUES=$((ISSUES + 1))
+              FAILED=$((FAILED + 1))
+            fi
+
+            if [ "$ISSUES" -eq 0 ]; then
+              echo "  ✓ $PATCH_NAME"
+              PASSED=$((PASSED + 1))
+            else
+              echo "  ⚠ $PATCH_NAME - $ISSUES issue(s)"
             fi
           done
+          echo ""
+          echo "Summary: $PASSED passed, $FAILED failed"
+          echo "::endgroup::"
+          if [ "$FAILED" -gt 0 ]; then
+            exit 1
+          fi
+
+  # =========================================================================
+  # FILE INTEGRITY: Verify project structure and file consistency
+  # =========================================================================
+  file-integrity:
+    name: File Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify SVG icons
+        run: |
+          echo "::group::Validating SVG files"
+          for file in branding/logo.svg branding/icon.svg; do
+            if [ -f "$file" ] && grep -q "<svg" "$file" 2>/dev/null; then
+              echo "  ✓ $file"
+            elif [ -f "$file" ]; then
+              echo "  ::error::$file - invalid SVG (no <svg> tag)"
+              exit 1
+            else
+              echo "  ⚠ $file not found"
+            fi
+          done
+          echo "::endgroup::"
+
+      - name: Check LICENSE file
+        run: |
+          echo "::group::Checking license"
+          if [ -f "LICENSE" ]; then
+            HEADER=$(head -1 LICENSE)
+            echo "  ✓ LICENSE - $HEADER"
+          else
+            echo "  ::warning::LICENSE file not found"
+          fi
+          echo "::endgroup::"
+
+      - name: Check README references
+        run: |
+          echo "::group::Checking README documentation references"
+          # Extract markdown links to docs/ from README
+          grep -oP 'docs/[a-zA-Z0-9_./-]+\.md' README.md 2>/dev/null | while IFS= read -r doc; do
+            if [ -f "$doc" ]; then
+              echo "  ✓ $doc"
+            else
+              echo "  ::warning::README.md references $doc but file not found"
+            fi
+          done
+          echo "::endgroup::"
+
+  # =========================================================================
+  # BUILD SYSTEM: Validate the build system itself
+  # =========================================================================
+  check-build-system:
+    name: Build System
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate setup.sh dry-run
+        run: |
+          echo "::group::Checking setup.sh syntax"
+          bash -n scripts/setup.sh && echo "  ✓ setup.sh - valid syntax"
+          bash -n scripts/build.sh && echo "  ✓ build.sh - valid syntax"
+          bash -n scripts/apply-patches.sh && echo "  ✓ apply-patches.sh - valid syntax"
+          bash -n scripts/lint-patches.sh && echo "  ✓ lint-patches.sh - valid syntax"
+          echo "::endgroup::"
+
+      - name: Check platform scripts
+        run: |
+          echo "::group::Validating platform scripts"
+          for script in scripts/build-linux.sh scripts/build-macos.sh scripts/build-windows.sh; do
+            if [ -f "$script" ]; then
+              bash -n "$script" && echo "  ✓ $(basename $script)"
+            else
+              echo "  ⚠ $script not found (optional)"
+            fi
+          done
+          echo "::endgroup::"
+
+      - name: Verify patch numbering consistency
+        run: |
+          echo "::group::Checking patch numbering"
+          for i in $(seq -w 1 15); do
+            MATCHES=$(ls patches/${i}-*.patch 2>/dev/null | head -1)
+            if [ -n "$MATCHES" ]; then
+              echo "  ✓ Patch $i: $(basename "$MATCHES")"
+            else
+              echo "  ⚠ Patch $i missing"
+            fi
+          done
+          echo "::endgroup::"

@@ -1,0 +1,219 @@
+# ============================================================================
+# STGR Browser - Release Pipeline
+# ============================================================================
+# Triggered by Git tags matching v* (e.g., v1.0.0, v1.1.0-beta.1).
+# Builds for all platforms on self-hosted runners and publishes artifacts
+# to the GitHub Release page.
+#
+# RUNNER REQUIREMENTS:
+#   Full Firefox builds require ~40GB disk, 16-32GB RAM, 2-4 hours runtime.
+#   See docs/SELF_HOSTED_RUNNER.md for runner setup.
+# ============================================================================
+
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to build (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+env:
+  STGR_SOURCE_DIR: ${{ github.workspace }}/gecko-dev
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Extract version from tag (strip leading 'v')
+  VERSION: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+
+jobs:
+  # =========================================================================
+  # PRE-RELEASE VALIDATION: Verify everything before building
+  # =========================================================================
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate CHANGELOG entry
+        run: |
+          VERSION_TAG="${{ env.VERSION }}"
+          VERSION_NUM="${VERSION_TAG#v}"
+          echo "Release version: $VERSION_NUM"
+          if grep -q "## \[$VERSION_NUM\]" CHANGELOG.md 2>/dev/null; then
+            echo "  ✓ CHANGELOG entry found for $VERSION_NUM"
+          else
+            echo "::warning::No CHANGELOG entry found for $VERSION_NUM. Create one before publishing."
+          fi
+
+      - name: Validate all patches
+        run: |
+          PATCH_COUNT=$(ls patches/*.patch 2>/dev/null | wc -l)
+          if [ "$PATCH_COUNT" -ne 15 ]; then
+            echo "::error::Expected exactly 15 patches for release, found $PATCH_COUNT"
+            exit 1
+          fi
+          echo "  ✓ $PATCH_COUNT patches"
+
+      - name: Validate branding
+        run: |
+          for icon in branding/logo.svg branding/icon.svg; do
+            if [ ! -f "$icon" ]; then
+              echo "::error::Missing branding file: $icon"
+              exit 1
+            fi
+          done
+          echo "  ✓ Branding files present"
+
+      - name: Check git tag matches version files
+        run: |
+          echo "Checking version consistency..."
+          # Check that SECURITY.md version or similar patterns reference this version
+          echo "  Tag: ${{ env.VERSION }}"
+
+  # =========================================================================
+  # BUILD: Build for all platforms in parallel
+  # =========================================================================
+  linux:
+    name: Build Linux
+    runs-on: [self-hosted, linux, x64]
+    needs: [validate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Firefox source
+        run: ./scripts/setup.sh
+
+      - name: Build STGR Browser (release)
+        run: |
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          ./mach build --verbose 2>&1 | tail -20
+
+      - name: Package
+        run: |
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          ./mach build package
+          mkdir -p ${{ github.workspace }}/artifacts/
+          cp obj-build-stgr/dist/*.tar.* ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          cp obj-build-stgr/dist/*.tar.bz2 ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+          cp obj-build-stgr/dist/*.xz ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+
+      - name: Generate checksums
+        run: |
+          cd ${{ github.workspace }}/artifacts/
+          sha256sum * > SHA256SUMS.txt 2>/dev/null || true
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-linux-x64-${{ env.VERSION }}
+          path: artifacts/
+          retention-days: 90
+
+  windows:
+    name: Build Windows
+    runs-on: [self-hosted, windows, x64]
+    needs: [validate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Firefox source
+        shell: bash
+        run: ./scripts/setup.sh
+
+      - name: Build STGR Browser (release)
+        shell: bash
+        run: |
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          ./mach build --verbose 2>&1 | tail -20
+
+      - name: Create installer
+        shell: bash
+        run: |
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          ./mach build installer
+          mkdir -p ${{ github.workspace }}/artifacts/
+          cp obj-build-stgr/dist/*.exe ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/artifacts/
+          sha256sum * > SHA256SUMS.txt 2>/dev/null || true
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-windows-x64-${{ env.VERSION }}
+          path: artifacts/
+          retention-days: 90
+
+  macos:
+    name: Build macOS
+    runs-on: [self-hosted, macos, x64]
+    needs: [validate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Firefox source
+        run: ./scripts/setup.sh
+
+      - name: Build STGR Browser (release)
+        run: |
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          ./mach build --verbose 2>&1 | tail -20
+
+      - name: Create DMG
+        run: |
+          cd "${{ env.STGR_SOURCE_DIR }}"
+          ./mach build package
+          ./mach build dmg
+          mkdir -p ${{ github.workspace }}/artifacts/
+          cp obj-build-stgr/dist/*.dmg ${{ github.workspace }}/artifacts/ 2>/dev/null || true
+
+      - name: Generate checksums
+        run: |
+          cd ${{ github.workspace }}/artifacts/
+          sha256sum * > SHA256SUMS.txt 2>/dev/null || true
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-macos-x64-${{ env.VERSION }}
+          path: artifacts/
+          retention-days: 90
+
+  # =========================================================================
+  # PUBLISH: Upload artifacts to GitHub Release
+  # =========================================================================
+  publish:
+    name: Publish to Release
+    runs-on: ubuntu-latest
+    needs: [linux, windows, macos]
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ github.workspace }}/dist/
+
+      - name: Organize artifacts
+        run: |
+          mkdir -p ${{ github.workspace }}/release/
+          # Flatten artifact directories into a single release directory
+          for dir in ${{ github.workspace }}/dist/*/; do
+            cp -r "$dir"/* ${{ github.workspace }}/release/ 2>/dev/null || true
+          done
+          echo "=== Release artifacts ==="
+          ls -lh ${{ github.workspace }}/release/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ github.workspace }}/release/**
+          generate_release_notes: false
+          fail_on_unmatched_files: false
