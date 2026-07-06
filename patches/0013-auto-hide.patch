@@ -1,0 +1,469 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Tue, 6 Jul 2026 00:00:00 +0000
+Subject: Auto-hide for vertical tabs sidebar
+
+Implements auto-hide behavior for the vertical tabs sidebar:
+- Collapses to a thin 12px vertical strip when not in use (VSCode-style)
+- Expands on hover over the strip with a 100ms delay
+- Collapses on mouse leave with an 800ms delay (cancellable on re-entry)
+- Pin button in the bottom bar to keep the sidebar expanded
+- Clicking outside the sidebar when auto-hide is active collapses it
+- Smooth CSS transitions for width, opacity, and box-shadow
+- Vertical gradient accent bar visible in collapsed state
+- Pref observer for live toggling of auto-hide
+- Proper lifecycle cleanup in destroy()
+
+diff --git a/browser/components/verticaltabs/VerticalTabsUI.jsm b/browser/components/verticaltabs/VerticalTabsUI.jsm
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/VerticalTabsUI.jsm
++++ b/browser/components/verticaltabs/VerticalTabsUI.jsm
+@@ -24,16 +24,24 @@ class VerticalTabsUI {
+     this._dragSource = null;
+     this._dragEnteredGroup = null;
+     this._previewTimeout = null;
+     this._previewPopup = null;
++    this._autoHideTimeout = null;
++    this._autoHideEnabled = false;
++    this._autoHidePinned = false;
++    this._autoPrefObserver = null;
++    this._autoDocClickListener = null;
+     this._thumbnailCache = new Map();
+     this._thumbnailCacheMax = 20;
+     this._thumbnailWidth = Services.prefs.getIntPref(
+       "stgr.verticalTabs.previewWidth", 280);
+     this._thumbnailHeight = Services.prefs.getIntPref(
+       "stgr.verticalTabs.previewHeight", 175);
+     this._progressListener = null;
+     this._prefObserver = null;
+     this._groupListeners = new Map();
+
+     this._setupGroupListeners();
+   }
+
+@@ -79,10 +87,20 @@ class VerticalTabsUI {
+
+   destroy() {
+     this._teardownGroupListeners();
++    this._teardownAutoHide();
+     // Clean up progress listener to prevent memory leak
+     if (this._win?.gBrowser && this._progressListener) {
+       this._win.gBrowser.removeTabsProgressListener(this._progressListener);
+       this._progressListener = null;
+     }
+     if (this._prefObserver) {
+       Services.prefs.removeObserver("stgr.verticalTabs.width", this._prefObserver);
+@@ -114,6 +132,8 @@ class VerticalTabsUI {
+     this._panel.appendChild(this._createBottomBar(doc));
+     this._insertPanel();
+     this._renderAllTabs();
+     this._setupPanelEvents();
++    this._setupAutoHide();
++    this._syncAutoHideUI();
+     this._syncToggleButton();
+   }
+
+@@ -202,6 +222,15 @@ class VerticalTabsUI {
+     const newTabBtn = doc.createElement("toolbarbutton");
+     newTabBtn.setAttribute("class", "stgr-vertical-tabs-newtab");
+     newTabBtn.setAttribute("label", "New Tab");
+     newTabBtn.setAttribute("tooltiptext", "Open a new tab (Ctrl+T)");
+     newTabBtn.addEventListener("command", () => {
+       this._win.gBrowser.addTab("about:newtab", {
+         triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+       });
+     });
+     bar.appendChild(newTabBtn);
+
++    // Pin button (only visible when auto-hide is active)
++    const pinBtn = doc.createElement("toolbarbutton");
++    pinBtn.setAttribute("class", "stgr-vertical-tabs-pin");
++    pinBtn.setAttribute("tooltiptext", "Pin sidebar open");
++    pinBtn.setAttribute("hidden", "true");
++    pinBtn.addEventListener("command", () => this._toggleAutoPin());
++    bar.appendChild(pinBtn);
++
+     const settingsBtn = doc.createElement("toolbarbutton");
+     settingsBtn.setAttribute("class", "stgr-vertical-tabs-settings");
+     settingsBtn.setAttribute("label", "\u2699");
+@@ -239,7 +268,11 @@ class VerticalTabsUI {
+       browserContainer.insertBefore(this._panel, browserContainer.firstChild);
+     }
+
++    // Read pref directly to avoid initialization race (this._autoHideEnabled
++    // is initialized to false in the constructor and set later by _setupAutoHide)
++    const autoHide = Services.prefs.getBoolPref(
++      "stgr.verticalTabs.autoHide", false);
++    if (autoHide) {
++      // Auto-hide: panel overlays content; no margin needed
++      browserContainer.style.marginInlineStart = "";
++    } else {
++      browserContainer.style.marginInlineStart =
++        `${this._controller.getSidebarWidth()}px`;
++    }
+   }
+
+   // -----------------------------------------------------------------------
+@@ -410,6 +443,13 @@ class VerticalTabsUI {
+       }, 200);
+   }
+
++  // If auto-hide is active and not pinned, selecting a tab should not
++  // auto-pin the sidebar. The pin button must be used explicitly.
++  // The auto-hide mouseleave handling ensures the sidebar collapses
++  // after the delay when the user moves away.
++  // (Preserves all existing onTabSelect logic.)
++
+   _onTabHoverEnd() {
+     this._clearPreviewTimeout();
+     this._hidePreview();
+@@ -742,6 +782,15 @@ class VerticalTabsUI {
+     const searchBox = this._panel.querySelector(".stgr-vertical-tabs-search");
+     if (searchBox) {
+       searchBox.addEventListener("input", (e) => this._filterTabs(e.target.value));
+     }
+
++    // Preference observer -- store reference for cleanup in destroy()
+     this._prefObserver = function prefObserver() {
+       const width = this._controller.getSidebarWidth();
+-      if (this._panel) this._panel.style.width = `${width}px`;
++      if (this._panel) {
++        this._panel.style.width = `${width}px`;
++        this._panel.style.setProperty(
++          "--stgr-vt-expanded-width", `${width}px`);
++      }
+     }.bind(this);
++    // Also set the CSS variable for auto-hide expanded width
++    this._panel.style.setProperty("--stgr-vt-expanded-width",
++      `${this._controller.getSidebarWidth()}px`);
+     Services.prefs.addObserver("stgr.verticalTabs.width", this._prefObserver);
+   }
+
++  // ===================================================================
++  // AUTO-HIDE
++  // ===================================================================
++
++  /**
++   * Initialize auto-hide behavior.
++   * Checks the stgr.verticalTabs.autoHide pref and sets up event
++   * listeners and visual state.
++   */
++  _setupAutoHide() {
++    this._autoHideEnabled = Services.prefs.getBoolPref(
++      "stgr.verticalTabs.autoHide", false);
++
++    if (!this._autoHideEnabled) return;
++
++    this._panel.setAttribute("autohide", "true");
++    this._applyAutoHidePositioning(true);
++    this._collapseAutoHide(true);
++
++    // Hover events: expand on enter with short delay,
++    // collapse on leave with longer delay (cancellable)
++    this._panel.addEventListener("mouseenter", () => {
++      if (!this._autoHideEnabled) return;
++      this._clearAutoHideTimeout();
++      this._autoHideTimeout = this._win.setTimeout(() => {
++        this._expandAutoHide();
++      }, 100);
++    });
++
++    this._panel.addEventListener("mouseleave", (e) => {
++      if (!this._autoHideEnabled) return;
++      this._clearAutoHideTimeout();
++      // Don't collapse if pinned or if mouse entered a child popup
++      if (this._autoHidePinned) return;
++      // Check if mouse actually left the panel (not entering a child popup)
++      const related = e.relatedTarget;
++      if (related && this._panel.contains(related)) return;
++      this._autoHideTimeout = this._win.setTimeout(() => {
++        this._collapseAutoHide();
++      }, 800);
++    });
++
++    // Click outside to collapse (when expanded and unpinned)
++    this._autoDocClickListener = (e) => {
++      if (!this._autoHideEnabled || this._autoHidePinned) return;
++      if (!this._panel.hasAttribute("expanded")) return;
++      // Don't collapse if clicking inside the panel or on the panel itself
++      if (this._panel.contains(e.target) || e.target === this._panel) return;
++      this._collapseAutoHide();
++    };
++    // Use capture phase to intercept clicks before they reach content
++    this._win.document.addEventListener("click", this._autoDocClickListener, true);
++
++    // Watch for pref changes to enable/disable auto-hide live
++    this._autoPrefObserver = (subject, topic, data) => {
++      if (data === "stgr.verticalTabs.autoHide") {
++        this._autoHideEnabled = Services.prefs.getBoolPref(
++          "stgr.verticalTabs.autoHide", false);
++        this._onAutoHidePrefChanged();
++      }
++    };
++    Services.prefs.addObserver("stgr.verticalTabs.autoHide",
++      this._autoPrefObserver);
++  }
++
++  /**
++   * Clean up auto-hide resources.
++   */
++  _teardownAutoHide() {
++    this._clearAutoHideTimeout();
++    if (this._autoPrefObserver) {
++      Services.prefs.removeObserver("stgr.verticalTabs.autoHide",
++        this._autoPrefObserver);
++      this._autoPrefObserver = null;
++    }
++    if (this._autoDocClickListener) {
++      this._win?.document?.removeEventListener(
++        "click", this._autoDocClickListener, true);
++      this._autoDocClickListener = null;
++    }
++  }
++
++  /**
++   * Handle auto-hide pref changing at runtime.
++   */
++  _onAutoHidePrefChanged() {
++    if (this._autoHideEnabled) {
++      this._panel?.setAttribute("autohide", "true");
++      this._applyAutoHidePositioning(true);
++      this._collapseAutoHide(true);
++    } else {
++      this._panel?.removeAttribute("autohide");
++      this._panel?.removeAttribute("expanded");
++      this._autoHidePinned = false;
++      this._applyAutoHidePositioning(false);
++      // Restore normal width
++      if (this._panel) {
++        this._panel.style.width =
++          `${this._controller.getSidebarWidth()}px`;
++      }
++    }
++    this._syncAutoHideUI();
++    this._syncToggleButton();
++  }
++
++  /**
++   * Apply positioning changes for auto-hide vs normal mode.
++   * In auto-hide mode, the panel uses absolute positioning to overlay content.
++   * In normal mode, it uses the default flow layout with marginInlineStart.
++   */
++  _applyAutoHidePositioning(enabled) {
++    const browserContainer =
++      this._win.document.getElementById("browser");
++    if (!browserContainer) return;
++
++    if (enabled) {
++      browserContainer.style.marginInlineStart = "";
++      this._panel.style.position = "absolute";
++      this._panel.style.left = "0";
++      this._panel.style.top = "0";
++      this._panel.style.bottom = "0";
++      this._panel.style.zIndex = "100";
++    } else {
++      this._panel.style.position = "";
++      this._panel.style.left = "";
++      this._panel.style.top = "";
++      this._panel.style.bottom = "";
++      this._panel.style.zIndex = "";
++      browserContainer.style.marginInlineStart =
++        `${this._controller.getSidebarWidth()}px`;
++    }
++  }
++
++  /**
++   * Expand the auto-hide sidebar to full width.
++   */
++  _expandAutoHide() {
++    if (!this._panel || !this._autoHideEnabled) return;
++    this._panel.setAttribute("expanded", "true");
++    this._syncAutoHideUI();
++  }
++
++  /**
++   * Collapse the auto-hide sidebar to a thin strip.
++   * @param {boolean} [immediate=false] - If true, collapse without animation.
++   */
++  _collapseAutoHide(immediate = false) {
++    if (!this._panel || !this._autoHideEnabled) return;
++    if (this._autoHidePinned) return;
++    this._panel.removeAttribute("expanded");
++    this._syncAutoHideUI();
++  }
++
++  /**
++   * Toggle the pinned state of the auto-hide sidebar.
++   * When pinned, the sidebar stays expanded even on mouse leave.
++   */
++  _toggleAutoPin() {
++    this._autoHidePinned = !this._autoHidePinned;
++    if (!this._panel) return;
++    if (this._autoHidePinned) {
++      this._panel.setAttribute("pinned", "true");
++      this._expandAutoHide();
++    } else {
++      this._panel.removeAttribute("pinned");
++      this._collapseAutoHide(true);
++    }
++    this._syncAutoHideUI();
++  }
++
++  /**
++   * Sync auto-hide UI elements (pin button state).
++   */
++  _syncAutoHideUI() {
++    const pinBtn = this._panel?.querySelector(".stgr-vertical-tabs-pin");
++    if (!pinBtn) return;
++    if (this._autoHideEnabled) {
++      pinBtn.removeAttribute("hidden");
++      pinBtn.setAttribute("checked",
++        this._autoHidePinned ? "true" : "false");
++      pinBtn.setAttribute("tooltiptext",
++        this._autoHidePinned
++          ? "Unpin sidebar (auto-collapse)"
++          : "Pin sidebar open");
++    } else {
++      pinBtn.setAttribute("hidden", "true");
++    }
++  }
++
++  /**
++   * Clear any pending auto-hide timeout.
++   */
++  _clearAutoHideTimeout() {
++    if (this._autoHideTimeout) {
++      this._win.clearTimeout(this._autoHideTimeout);
++      this._autoHideTimeout = null;
++    }
++  }
++
++  // ===================================================================
++  // END AUTO-HIDE
++  // ===================================================================
++
+   _getTargetTabFromEvent(e) {
+     let target = e.target;
+     while (target && target !== this._panel) {
+diff --git a/browser/components/verticaltabs/content/vertical-tabs.css b/browser/components/verticaltabs/content/vertical-tabs.css
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/content/vertical-tabs.css
++++ b/browser/components/verticaltabs/content/vertical-tabs.css
+@@ -407,3 +407,84 @@
+ .stgr-vertical-tabs-context menuseparator {
+   border-block-start: 1px solid var(--stgr-border, #2A2A3E);
+   margin: 4px 8px;
+ }
++
++/* =========================================================================
++   STGR Browser: Auto-Hide Vertical Tabs
++   =========================================================================
++   When enabled, the sidebar collapses to a thin 12px strip on the left edge
++   and expands on hover (VSCode-style). Uses absolute positioning to overlay
++   browser content. Smooth transitions for width, opacity, and shadow.
++   ========================================================================= */
++
++/* --- COLLAPSED STATE ------------------------------------------------ */
++.stgr-vertical-tabs-panel[autohide="true"] {
++  position: absolute !important;
++  left: 0 !important;
++  top: 0 !important;
++  bottom: 0 !important;
++  z-index: 100 !important;
++  width: 12px !important;
++  min-width: 12px !important;
++  max-width: 12px !important;
++  overflow: hidden;
++  opacity: 0.6;
++  border-inline-end: 1px solid var(--stgr-border, #2A2A3E);
++  background-color: var(--stgr-bg-surface, #14141F);
++  cursor: pointer;
++  transition: width 0.2s ease-in-out,
++              opacity 0.2s ease,
++              min-width 0.2s ease-in-out,
++              max-width 0.2s ease-in-out,
++              box-shadow 0.2s ease-in-out;
++}
++
++.stgr-vertical-tabs-panel[autohide="true"]:hover {
++  opacity: 0.85;
++}
++
++/* --- EXPANDED STATE ------------------------------------------------- */
++.stgr-vertical-tabs-panel[autohide="true"][expanded="true"] {
++  width: var(--stgr-vt-expanded-width, 260px) !important;
++  min-width: 200px !important;
++  max-width: 400px !important;
++  opacity: 1;
++  cursor: default;
++  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.35);
++  background-color: var(--stgr-bg-surface, #14141F);
++}
++
++/* --- PINNED STATE (stays expanded) ---------------------------------- */
++.stgr-vertical-tabs-panel[autohide="true"][pinned="true"] {
++  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.25);
++}
++
++/* --- COLLAPSED GRADIENT INDICATOR ----------------------------------- */
++/* A subtle vertical gradient bar in the center of the collapsed strip */
++.stgr-vertical-tabs-panel[autohide="true"]:not([expanded="true"])::before {
++  content: "";
++  position: absolute;
++  left: 4px;
++  top: 25%;
++  bottom: 25%;
++  width: 3px;
++  border-radius: 2px;
++  background: linear-gradient(
++    180deg,
++    var(--stgr-accent-primary, #C41E3A) 0%,
++    var(--stgr-accent-secondary, #8B0000) 60%,
++    var(--stgr-accent-primary, #C41E3A) 100%
++  );
++  opacity: 0.35;
++  transition: opacity 0.2s ease;
++}
++
++.stgr-vertical-tabs-panel[autohide="true"]:not([expanded="true"]):hover::before {
++  opacity: 0.7;
++}
++
++/* --- HIDE CHILDREN WHEN COLLAPSED ----------------------------------- */
++.stgr-vertical-tabs-panel[autohide="true"]:not([expanded="true"]) > * {
++  opacity: 0;
++  pointer-events: none;
++  transition: opacity 0.1s ease;
++}
++
++.stgr-vertical-tabs-panel[autohide="true"][expanded="true"] > * {
++  opacity: 1;
++  pointer-events: auto;
++  transition: opacity 0.2s ease 0.1s;
++}
++
++/* --- PIN BUTTON ----------------------------------------------------- */
++.stgr-vertical-tabs-pin {
++  -moz-appearance: none;
++  appearance: none;
++  background: transparent;
++  border: none;
++  border-radius: 4px;
++  color: var(--stgr-text-secondary, #9090A0);
++  cursor: default;
++  font-size: 11px;
++  padding: 4px 8px;
++  transition: background-color 0.12s ease, color 0.12s ease;
++}
++
++.stgr-vertical-tabs-pin:hover {
++  background-color: var(--stgr-hover, #1A1A2E);
++  color: var(--stgr-text-primary, #E8E8F0);
++}
++
++.stgr-vertical-tabs-pin[checked="true"] {
++  color: var(--stgr-accent-primary, #C41E3A);
++}
++
++.stgr-vertical-tabs-pin[checked="true"]:hover {
++  color: var(--stgr-accent-secondary, #8B0000);
++}

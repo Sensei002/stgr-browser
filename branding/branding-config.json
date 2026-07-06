@@ -1,0 +1,86 @@
+{
+  "brand": {
+    "name": "STGR Browser",
+    "shortName": "STGR",
+    "vendor": "STGR",
+    "description": "A lightweight, privacy-first, gaming-focused browser built on Firefox technology.",
+    "homepage": "https://stgr-browser.dev",
+    "supportUrl": "https://stgr-browser.dev/support"
+  },
+  "branding": {
+    "logo": {
+      "primary": "#C41E3A",
+      "secondary": "#8B0000",
+      "accent": "#FF4444",
+      "gradientStart": "#C41E3A",
+      "gradientEnd": "#8B0000"
+    },
+    "colors": {
+      "primary": "#C41E3A",
+      "secondary": "#8B0000",
+      "accent": "#FF4444",
+      "background": "#0A0A0A",
+      "surface": "#141414",
+      "surfaceAlt": "#1E1E1E",
+      "text": "#E8E8E8",
+      "textSecondary": "#909090",
+      "success": "#00E676",
+      "warning": "#FFC107",
+      "error": "#FF5252",
+      "darkMode": {
+        "background": "#0A0A0A",
+        "surface": "#141414",
+        "text": "#E8E8E8"
+      },
+      "lightMode": {
+        "background": "#F8F4F4",
+        "surface": "#FFFFFF",
+        "text": "#1A1A1A"
+      }
+    }
+  },
+  "firefoxReplacements": {
+    "brandName": {
+      "from": "Firefox",
+      "to": "STGR Browser"
+    },
+    "brandShortName": {
+      "from": "Firefox",
+      "to": "STGR"
+    },
+    "vendorName": {
+      "from": "Mozilla",
+      "to": "STGR"
+    },
+    "vendorShortName": {
+      "from": "Mozilla",
+      "to": "STGR"
+    },
+    "homepageURL": {
+      "from": "about:home",
+      "to": "about:home"
+    },
+    "defaultHomepage": {
+      "from": "www.mozilla.org",
+      "to": "stgr-browser.dev"
+    },
+    "aboutName": {
+      "from": "about:firefox",
+      "to": "about:stgr"
+    }
+  },
+  "build": {
+    "applicationId": "app.stgr.browser",
+    "applicationVendor": "STGR",
+    "applicationName": "STGR Browser",
+    "applicationVersion": "1.0.0",
+    "buildID": "20260701",
+    "platformVersion": "130.0",
+    "sourceRepository": "https://github.com/stgr-browser/stgr-browser"
+  },
+  "firefoxSource": {
+    "baseBranch": "RELEASE_BASE_20250701",
+    "mozillaRepo": "https://github.com/mozilla/gecko-dev",
+    "forkRepo": "https://github.com/stgr-browser/gecko-dev"
+  }
+}

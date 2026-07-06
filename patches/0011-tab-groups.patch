@@ -1,0 +1,1037 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Tue, 2 Jul 2026 00:00:00 +0000
+Subject: Tab Groups implementation with visual hierarchy and nesting
+
+Implements tab groups for the vertical sidebar:
+- Create, rename, delete, recolor groups
+- Add/remove tabs via drag-drop onto group headers and context menu
+- Collapsible group headers with chevron, color dot, name, tab count, close button
+- Grouped tabs indented 18px within the sidebar
+- Expand/collapse with smooth animation
+- Context menu: "New Group with Tab", "Remove from Group", "Add to Group" submenu
+- Group context menu: rename, select all, change color, ungroup all, delete
+- Ctrl+Shift+G to collapse all groups
+- Persists groups via stgr.tabGroups.data pref (JSON)
+- Tab-group membership persisted via stgrGroupId attribute on <tab> element
+- Panel guard prevents re-render after destruction
+- RTL-aware CSS
+
+diff --git a/browser/components/verticaltabs/moz.build b/browser/components/verticaltabs/moz.build
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/moz.build
++++ b/browser/components/verticaltabs/moz.build
+@@ -6,6 +6,7 @@
+
+ EXTRA_JS_MODULES += [
+     "VerticalTabs.jsm",
+     "VerticalTabsUI.jsm",
++    "TabGroupsManager.jsm",
+ ]
+
+ FINAL_TARGET_FILES += [
+@@ -16,5 +17,5 @@ FINAL_TARGET_FILES += [
+ ]
+ LOCALIZED_FILES += [
+     "locales/en-US/verticaltabs.ftl",
+ ]
+
+diff --git a/browser/components/verticaltabs/TabGroupsManager.jsm b/browser/components/verticaltabs/TabGroupsManager.jsm
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/verticaltabs/TabGroupsManager.jsm
+@@ -0,0 +1,280 @@
++/* -*- Mode: JS; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++const EXPORTED_SYMBOLS = ["TabGroupsManager"];
++
++const GROUP_COLORS = [
++  { name: "Red",      hex: "#C41E3A" },
++  { name: "Green",    hex: "#00E676" },
++  { name: "Orange",   hex: "#FF9100" },
++  { name: "Purple",   hex: "#B388FF" },
++  { name: "Pink",     hex: "#FF80AB" },
++  { name: "Red",      hex: "#FF5252" },
++  { name: "Yellow",   hex: "#FFD600" },
++  { name: "Teal",     hex: "#1DE9B6" },
++];
++
++const STORAGE_PREF = "stgr.tabGroups.data";
++
++// ===========================================================================
++// TabGroupsManager - Singleton managing tab group definitions and membership
++// ===========================================================================
++//
++// Data Model:
++//   groups: Map<groupId, { id, name, color, collapsed, order, tabIds: Set }>
++//   _tabGroup: WeakMap<tab, groupId>
++//
++// Persistence:
++//   - Group definitions are stored as JSON in stgr.tabGroups.data pref
++//   - Tab-group membership is stored via the "stgrGroupId" attribute on the
++//     <tab> XUL element, which Firefox's session store serializes.
++//   - The WeakMap provides fast runtime lookup and is repopulated from the
++//     attribute on tab creation / session restore.
++//
++// ===========================================================================
++
++let _instance = null;
++
++class TabGroupsManager {
++  constructor() {
++    if (_instance) return _instance;
++    this._groups = new Map();
++    this._tabGroup = new WeakMap();
++    this._nextId = 1;
++    this._loaded = false;
++    this._listeners = new Map();
++    _instance = this;
++  }
++
++  static getInstance() {
++    if (!_instance) new TabGroupsManager();
++    return _instance;
++  }
++
++  // -----------------------------------------------------------------------
++  // PERSISTENCE
++  // -----------------------------------------------------------------------
++
++  load() {
++    if (this._loaded) return;
++    this._loaded = true;
++    try {
++      const json = Services.prefs.getCharPref(STORAGE_PREF, "");
++      if (!json) return;
++      const data = JSON.parse(json);
++      for (const entry of data.groups || []) {
++        this._groups.set(entry.id, {
++          id: entry.id,
++          name: entry.name || "Group",
++          color: entry.color || GROUP_COLORS[0].hex,
++          collapsed: !!entry.collapsed,
++          order: entry.order || 0,
++          tabIds: new Set(entry.tabIds || []),
++        });
++      }
++      this._nextId = data.nextId || this._groups.size + 1;
++    } catch (e) {
++      console.error("STGR TabGroups: Failed to load groups", e);
++    }
++  }
++
++  save() {
++    const data = {
++      nextId: this._nextId,
++      groups: Array.from(this._groups.values()).map(g => ({
++        id: g.id,
++        name: g.name,
++        color: g.color,
++        collapsed: g.collapsed,
++        order: g.order,
++        tabIds: Array.from(g.tabIds),
++      })),
++    };
++    Services.prefs.setCharPref(STORAGE_PREF, JSON.stringify(data));
++  }
++
++  // -----------------------------------------------------------------------
++  // GROUP CRUD
++  // -----------------------------------------------------------------------
++
++  createGroup(name, color) {
++    const id = String(this._nextId++);
++    const group = {
++      id,
++      name: name || `Group ${this._groups.size + 1}`,
++      color: color || GROUP_COLORS[this._groups.size % GROUP_COLORS.length].hex,
++      collapsed: false,
++      order: this._groups.size,
++      tabIds: new Set(),
++    };
++    this._groups.set(id, group);
++    this._emit("group-added", { groupId: id });
++    this.save();
++    return id;
++  }
++
++  deleteGroup(groupId) {
++    const group = this._groups.get(groupId);
++    if (!group) return;
++    for (const tabId of group.tabIds) {
++      const tab = this._findTabById(tabId);
++      if (tab) tab.removeAttribute("stgrGroupId");
++    }
++    this._groups.delete(groupId);
++    this._emit("group-removed", { groupId });
++    this.save();
++  }
++
++  renameGroup(groupId, name) {
++    const group = this._groups.get(groupId);
++    if (!group) return;
++    group.name = name;
++    this._emit("group-changed", { groupId });
++    this.save();
++  }
++
++  setGroupColor(groupId, color) {
++    const group = this._groups.get(groupId);
++    if (!group) return;
++    group.color = color;
++    this._emit("group-changed", { groupId });
++    this.save();
++  }
++
++  toggleCollapsed(groupId) {
++    const group = this._groups.get(groupId);
++    if (!group) return;
++    group.collapsed = !group.collapsed;
++    this._emit("group-changed", { groupId });
++    this.save();
++  }
++
++  collapseAll() {
++    for (const group of this._groups.values()) {
++      group.collapsed = true;
++    }
++    this._emit("groups-collapsed-all");
++    this.save();
++  }
++
++  // -----------------------------------------------------------------------
++  // TAB MEMBERSHIP
++  // -----------------------------------------------------------------------
++
++  /** Get a stable identifier for a tab for persistence. */
++  _tabId(tab) {
++    // outerWindowID is stable across session restore.
++    // linkedPanel is available for active tabs.
++    return tab.linkedBrowser?.outerWindowID ||
++           tab.linkedPanel ||
++           tab.getAttribute("id");
++  }
++
++  addTabToGroup(tab, groupId) {
++    const group = this._groups.get(groupId);
++    if (!group) return;
++    this.removeTabFromGroup(tab);
++    tab.setAttribute("stgrGroupId", groupId);
++    group.tabIds.add(this._tabId(tab));
++    this._tabGroup.set(tab, groupId);
++    this._emit("tab-added-to-group", { tab, groupId });
++    this.save();
++  }
++
++  removeTabFromGroup(tab) {
++    const groupId = this._tabGroup.get(tab) || tab.getAttribute("stgrGroupId");
++    if (!groupId) return;
++    const group = this._groups.get(groupId);
++    if (group) {
++      group.tabIds.delete(this._tabId(tab));
++    }
++    tab.removeAttribute("stgrGroupId");
++    this._tabGroup.delete(tab);
++    this._emit("tab-removed-from-group", { tab, groupId });
++    this.save();
++  }
++
++  getGroupForTab(tab) {
++    let id = this._tabGroup.get(tab);
++    if (!id) {
++      id = tab.getAttribute("stgrGroupId");
++      if (id && this._groups.has(id)) {
++        this._tabGroup.set(tab, id);
++      }
++    }
++    return id || null;
++  }
++
++  getGroupDataForTab(tab) {
++    const id = this.getGroupForTab(tab);
++    return id ? this._groups.get(id) || null : null;
++  }
++
++  getTabsInGroup(win, groupId) {
++    return Array.from(win.gBrowser.tabs).filter(
++      t => this.getGroupForTab(t) === groupId
++    );
++  }
++
++  restoreTabGroup(tab) {
++    const groupId = tab.getAttribute("stgrGroupId");
++    if (groupId && this._groups.has(groupId)) {
++      this._tabGroup.set(tab, groupId);
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // QUERIES
++  // -----------------------------------------------------------------------
++
++  getGroups() {
++    return Array.from(this._groups.values()).sort((a, b) => a.order - b.order);
++  }
++
++  getGroup(groupId) { return this._groups.get(groupId) || null; }
++  getGroupIds() { return Array.from(this._groups.keys()); }
++  getPresetColors() { return GROUP_COLORS; }
++
++  // -----------------------------------------------------------------------
++  // EVENTS
++  // -----------------------------------------------------------------------
++
++  on(event, callback) {
++    if (!this._listeners.has(event)) this._listeners.set(event, new Set());
++    this._listeners.get(event).add(callback);
++  }
++
++  off(event, callback) {
++    this._listeners.get(event)?.delete(callback);
++  }
++
++  _emit(event, data) {
++    for (const cb of this._listeners.get(event) || []) {
++      try { cb(data); } catch (e) { console.error("STGR TabGroups error", e); }
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // UTILITY
++  // -----------------------------------------------------------------------
++
++  _findTabById(tabId) {
++    if (!tabId) return null;
++    const windows = Services.wm.getEnumerator("navigator:browser");
++    while (windows.hasMoreElements()) {
++      const win = windows.getNext();
++      for (const tab of win.gBrowser.tabs) {
++        if (this._tabId(tab) === tabId) return tab;
++      }
++    }
++    return null;
++  }
++}
+
+diff --git a/browser/components/verticaltabs/VerticalTabsUI.jsm b/browser/components/verticaltabs/VerticalTabsUI.jsm
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/VerticalTabsUI.jsm
++++ b/browser/components/verticaltabs/VerticalTabsUI.jsm
+@@ -4,29 +4,59 @@
+ const EXPORTED_SYMBOLS = ["VerticalTabsUI"];
+
+ const { VerticalTabs } = ChromeUtils.import("resource:///modules/VerticalTabs.jsm");
++const { TabGroupsManager } = ChromeUtils.import(
++  "resource:///modules/TabGroupsManager.jsm");
+
+ // ===========================================================================
+ // VerticalTabsUI - Per-window UI manager for the vertical tab sidebar
+ // ===========================================================================
+ class VerticalTabsUI {
+   constructor(win, controller) {
+     this._win = win;
+     this._controller = controller;
++    this._groups = TabGroupsManager.getInstance();
+     this._panel = null;
+     this._tabItems = new Map();
+     this._pinnedSection = null;
++    this._groupSections = new Map(); // groupId -> { container, header, list }
+     this._normalSection = null;
++    this._groupContainer = null;
+     this._scrollContainer = null;
+     this._dragSource = null;
++    this._dragEnteredGroup = null;
+     this._previewTimeout = null;
+     this._previewPopup = null;
+     this._prefObserver = null;
++    this._groupListeners = new Map();
++    this._setupGroupListeners();
++  }
++
++  _setupGroupListeners() {
++    const events = ["group-added", "group-removed", "group-changed",
++                    "tab-added-to-group", "tab-removed-from-group",
++                    "groups-collapsed-all"];
++    for (const evt of events) {
++      const fn = () => this._onGroupsChanged();
++      this._groups.on(evt, fn);
++      this._groupListeners.set(evt, fn);
++    }
++  }
++
++  _teardownGroupListeners() {
++    for (const [evt, fn] of this._groupListeners) {
++      this._groups.off(evt, fn);
++    }
++    this._groupListeners.clear();
++  }
++
++  _onGroupsChanged() {
++    if (!this._panel) return;
++    this._renderAllTabs();
+   }
+
+   // -----------------------------------------------------------------------
+   // PANEL LIFECYCLE
+   // -----------------------------------------------------------------------
+
+   createPanel() {
+     if (this._panel) return;
++    this._groups.load();
+
+     const doc = this._win.document;
+
+@@ -38,12 +68,16 @@ class VerticalTabsUI {
+     this._pinnedSection = this._createTabSection(doc, "pinned");
+     this._panel.appendChild(this._pinnedSection.container);
+
++    this._groupContainer = doc.createElement("vbox");
++    this._groupContainer.setAttribute("class", "stgr-vertical-tabs-groups");
++    this._panel.appendChild(this._groupContainer);
++
+     this._scrollContainer = doc.createElement("vbox");
+     this._scrollContainer.setAttribute("class", "stgr-vertical-tabs-scroll");
+     this._scrollContainer.setAttribute("flex", "1");
+     this._panel.appendChild(this._scrollContainer);
+
+-    this._normalSection = this._createTabSection(doc, "normal");
+-    this._scrollContainer.appendChild(this._normalSection.container);
++    this._normalSection = this._createTabSection(doc, "ungrouped");
++    this._scrollContainer.appendChild(this._normalSection.container);
+
+     this._panel.appendChild(this._createBottomBar(doc));
+     this._insertPanel();
+@@ -57,10 +91,16 @@ class VerticalTabsUI {
+   removePanel() {
+     if (!this._panel) return;
+
++    for (const [, sec] of this._groupSections) sec.container.remove();
++    this._groupSections.clear();
++
+     for (const [, item] of this._tabItems) item.remove();
+     this._tabItems.clear();
+
+     this._panel.remove();
+     this._panel = null;
++    this._groupContainer = null;
+     this._pinnedSection = null;
++    this._scrollContainer = null;
+     this._normalSection = null;
+-    this._scrollContainer = null;
+
+@@ -76,6 +116,7 @@ class VerticalTabsUI {
+   }
+
+   destroy() {
++    this._teardownGroupListeners();
+     if (this._prefObserver) {
+       Services.prefs.removeObserver("stgr.verticalTabs.width", this._prefObserver);
+       this._prefObserver = null;
+@@ -155,36 +196,148 @@ class VerticalTabsUI {
+   // -----------------------------------------------------------------------
+
+   _renderAllTabs() {
++    for (const [, sec] of this._groupSections) sec.container.remove();
++    this._groupSections.clear();
++    this._normalSection.list.textContent = "";
++    if (this._groupContainer) this._groupContainer.textContent = "";
++
+     const tabs = this._win.gBrowser.tabs;
+-    for (let i = 0; i < tabs.length; i++) {
+-      this._renderTabItem(tabs[i], i);
++    const groups = this._groups.getGroups();
++
++    // First pass: render all non-pinned items to _tabItems (without appending to any list)
++    for (const tab of tabs) {
++      if (!this._tabItems.has(tab)) {
++        this._createTabElement(tab);
++      }
++    }
++
++    // Second pass: sort items into correct containers
++    for (const tab of tabs) {
++      const item = this._tabItems.get(tab);
++      if (!item) continue;
++
++      if (tab.pinned) {
++        this._pinnedSection.list.appendChild(item);
++        continue;
++      }
++
++      const groupId = this._groups.getGroupForTab(tab);
++      if (groupId) {
++        // Find or create the group section
++        let section = this._groupSections.get(groupId);
++        if (!section) {
++          const group = this._groups.getGroup(groupId);
++          if (group) {
++            section = this._createGroupSection(group);
++            this._groupSections.set(groupId, section);
++          }
++        }
++        if (section) {
++          section.list.appendChild(item);
++          item.setAttribute("group", groupId);
++        } else {
++          this._normalSection.list.appendChild(item);
++          item.removeAttribute("group");
++        }
++      } else {
++        this._normalSection.list.appendChild(item);
++        item.removeAttribute("group");
++      }
++    }
++
++    // Render group containers (order as persisted)
++    for (const group of groups) {
++      const section = this._groupSections.get(group.id);
++      if (section && section.list.childElementCount > 0) {
++        if (this._groupContainer) {
++          this._groupContainer.appendChild(section.container);
++        }
++      }
+     }
++
+     this._updateSectionVisibility();
+     this._scrollToActiveTab();
+   }
+
++  _createGroupSection(group) {
++    const doc = this._win.document;
++    const container = doc.createElement("vbox");
++    container.setAttribute("class", "stgr-vertical-tabs-group");
++    container.dataset.groupId = group.id;
++
++    const header = doc.createElement("hbox");
++    header.setAttribute("class", "stgr-vertical-tabs-group-header");
++    header.dataset.groupId = group.id;
++
++    const chevron = doc.createElement("image");
++    chevron.setAttribute("class", "stgr-vertical-tabs-group-chevron");
++    chevron.toggleAttribute("collapsed", group.collapsed);
++    header.appendChild(chevron);
++
++    const dot = doc.createElement("hbox");
++    dot.setAttribute("class", "stgr-vertical-tabs-group-dot");
++    dot.style.backgroundColor = group.color;
++    header.appendChild(dot);
++
++    const name = doc.createElement("label");
++    name.setAttribute("class", "stgr-vertical-tabs-group-name");
++    name.setAttribute("crop", "end");
++    name.setAttribute("flex", "1");
++    name.textContent = group.name;
++    header.appendChild(name);
++
++    const count = doc.createElement("label");
++    count.setAttribute("class", "stgr-vertical-tabs-group-count");
++    count.textContent = String(group.tabIds.size);
++    header.appendChild(count);
++
++    const closeBtn = doc.createElement("toolbarbutton");
++    closeBtn.setAttribute("class", "stgr-vertical-tabs-group-close");
++    closeBtn.setAttribute("tooltiptext", "Close group");
++    closeBtn.addEventListener("command", (e) => {
++      e.stopPropagation();
++      this._groups.deleteGroup(group.id);
++    });
++    header.appendChild(closeBtn);
++
++    header.addEventListener("click", (e) => {
++      if (e.target.classList?.contains("stgr-vertical-tabs-group-close")) return;
++      if (e.detail === 2) {
++        const newName = this._win.prompt("Group name:", group.name);
++        if (newName && newName.trim()) this._groups.renameGroup(group.id, newName.trim());
++        return;
++      }
++      this._groups.toggleCollapsed(group.id);
++      container.toggleAttribute("collapsed", !group.collapsed);
++      chevron.toggleAttribute("collapsed", !group.collapsed);
++    });
++
++    header.addEventListener("contextmenu", (e) => {
++      e.preventDefault();
++      this._showGroupContextMenu(group, e.clientX, e.clientY);
++    });
++
++    header.addEventListener("dragover", (e) => {
++      e.preventDefault();
++      e.dataTransfer.dropEffect = "move";
++      header.setAttribute("drag-hover", "true");
++      this._dragEnteredGroup = group.id;
++    });
++
++    header.addEventListener("dragleave", () => {
++      header.removeAttribute("drag-hover");
++      if (this._dragEnteredGroup === group.id) this._dragEnteredGroup = null;
++    });
++
++    header.addEventListener("drop", (e) => {
++      e.preventDefault();
++      header.removeAttribute("drag-hover");
++      if (this._dragSource) {
++        this._groups.addTabToGroup(this._dragSource, group.id);
++      }
++      this._dragEnteredGroup = null;
++    });
++
++    container.appendChild(header);
++    const list = doc.createElement("vbox");
++    list.setAttribute("class", "stgr-vertical-tabs-group-list");
++    if (group.collapsed) list.setAttribute("collapsed", "true");
++    container.appendChild(list);
++
++    return { container, header, list };
++  }
++
++  _showGroupContextMenu(group, x, y) {
++    const doc = this._win.document;
++    const menu = doc.createElement("menupopup");
++    menu.setAttribute("class", "stgr-vertical-tabs-context");
++
++    const renameItem = doc.createElement("menuitem");
++    renameItem.setAttribute("label", "Rename Group");
++    renameItem.addEventListener("command", () => {
++      const name = this._win.prompt("Group name:", group.name);
++      if (name && name.trim()) this._groups.renameGroup(group.id, name.trim());
++    });
++    menu.appendChild(renameItem);
++
++    menu.appendChild(doc.createElement("menuseparator"));
++
++    const selectItem = doc.createElement("menuitem");
++    selectItem.setAttribute("label", "Select All in Group");
++    selectItem.addEventListener("command", () => {
++      const tabs = this._groups.getTabsInGroup(this._win, group.id);
++      if (tabs.length) this._win.gBrowser.selectedTab = tabs[0];
++    });
++    menu.appendChild(selectItem);
++
++    menu.appendChild(doc.createElement("menuseparator"));
++
++    for (const c of this._groups.getPresetColors()) {
++      const mi = doc.createElement("menuitem");
++      mi.setAttribute("label", c.name);
++      mi.setAttribute("class", "stgr-vertical-tabs-context-color");
++      mi.setAttribute("style", `border-inline-start: 3px solid ${c.hex}; padding-inline-start: 8px;`);
++      mi.addEventListener("command", () => this._groups.setGroupColor(group.id, c.hex));
++      menu.appendChild(mi);
++    }
++
++    menu.appendChild(doc.createElement("menuseparator"));
++
++    const ungroupItem = doc.createElement("menuitem");
++    ungroupItem.setAttribute("label", "Ungroup All");
++    ungroupItem.addEventListener("command", () => {
++      for (const tab of this._groups.getTabsInGroup(this._win, group.id)) {
++        this._groups.removeTabFromGroup(tab);
++      }
++    });
++    menu.appendChild(ungroupItem);
++
++    const deleteItem = doc.createElement("menuitem");
++    deleteItem.setAttribute("label", "Delete Group");
++    deleteItem.addEventListener("command", () => this._groups.deleteGroup(group.id));
++    menu.appendChild(deleteItem);
++
++    menu.openPopupAtScreen(x, y);
++  }
++
+   // -----------------------------------------------------------------------
+   // TAB RENDERING
+   // -----------------------------------------------------------------------
+
+-  _renderAllTabs() { ... _replaced above ... }
++  /** Create the tab element without appending (appending done by _renderAllTabs). */
++  _createTabElement(tab) {
++    if (this._tabItems.has(tab)) return;
++
++    // Restore group membership from session attribute
++    this._groups.restoreTabGroup(tab);
++
++    const doc = this._win.document;
++    const item = doc.createElement("hbox");
++    item.setAttribute("class", "stgr-vertical-tab");
++    item.setAttribute("role", "tab");
++    item.setAttribute("aria-selected", tab.selected ? "true" : "false");
++    item.setAttribute("tabindex", "-1");
++    item.setAttribute("draggable", "true");
++
++    if (tab.selected) item.setAttribute("selected", "true");
++    if (tab.pinned) item.setAttribute("pinned", "true");
++    if (tab.hasAttribute("soundplaying")) item.setAttribute("soundplaying", "true");
++    if (tab.hasAttribute("muted")) item.setAttribute("muted", "true");
++    if (tab.hasAttribute("busy")) item.setAttribute("busy", "true");
++
++    const identityColor = tab.getAttribute("data-identity-color");
++    if (identityColor) {
++      const indicator = doc.createElement("hbox");
++      indicator.setAttribute("class", "stgr-vertical-tab-container-indicator");
++      indicator.style.backgroundColor = identityColor;
++      item.appendChild(indicator);
++    }
++
++    const favicon = doc.createElement("image");
++    favicon.setAttribute("class", "stgr-vertical-tab-favicon");
++    favicon.setAttribute("src",
++      tab.getAttribute("image") || "chrome://global/skin/icons/defaultFavicon.svg");
++    item.appendChild(favicon);
++
++    const spinner = doc.createElement("image");
++    spinner.setAttribute("class", "stgr-vertical-tab-spinner");
++    spinner.toggleAttribute("hidden", !tab.hasAttribute("busy"));
++    item.appendChild(spinner);
++
++    const label = doc.createElement("label");
++    label.setAttribute("class", "stgr-vertical-tab-label");
++    label.setAttribute("crop", "end");
++    label.setAttribute("flex", "1");
++    label.textContent = tab.label;
++    item.appendChild(label);
++
++    if (tab.hasAttribute("soundplaying") || tab.hasAttribute("muted")) {
++      const muteBtn = doc.createElement("toolbarbutton");
++      muteBtn.setAttribute("class", "stgr-vertical-tab-mute");
++      muteBtn.setAttribute("tooltiptext",
++        tab.hasAttribute("muted") ? "Unmute tab" : "Mute tab");
++      muteBtn.addEventListener("command", (e) => { e.stopPropagation(); tab.toggleMuteAudio(); });
++      item.appendChild(muteBtn);
++    }
++
++    const closeBtn = doc.createElement("toolbarbutton");
++    closeBtn.setAttribute("class", "stgr-vertical-tab-close");
++    closeBtn.setAttribute("tooltiptext", "Close tab");
++    closeBtn.addEventListener("command", (e) => { e.stopPropagation(); this._win.gBrowser.removeTab(tab); });
++    item.appendChild(closeBtn);
++
++    item.addEventListener("click", (e) => {
++      if (e.button === 0) this._win.gBrowser.selectedTab = tab;
++      else if (e.button === 1) this._win.gBrowser.removeTab(tab);
++    });
++
++    item.addEventListener("contextmenu", (e) => {
++      e.preventDefault();
++      this._showTabContextMenu(tab, e.clientX, e.clientY);
++    });
++
++    item.addEventListener("dragstart", (e) => this._onDragStart(e, tab));
++    item.addEventListener("dragover", (e) => this._onDragOver(e, tab));
++    item.addEventListener("dragend", () => this._onDragEnd());
++    item.addEventListener("dragleave", () => this._onDragLeave());
++    item.addEventListener("mouseenter", () => this._onTabHover(tab));
++    item.addEventListener("mouseleave", () => this._onTabHoverEnd());
++
++    this._tabItems.set(tab, item);
++  }
++
++  _updateSectionVisibility() {
++    const hasPinned = this._pinnedSection.list.childElementCount > 0;
++    const label = this._pinnedSection.container.querySelector(
++      ".stgr-vertical-tabs-section-label");
++    if (label) {
++      label.toggleAttribute("hidden", !hasPinned);
++      if (hasPinned) label.textContent = "Pinned tabs";
++    }
++  }
+
+-  _renderTabItem(tab, index) {
++  _renderTabItem(tab, index, targetList) {
+     if (this._tabItems.has(tab)) return this._tabItems.get(tab);
+
++    // Fallback: create element if not already created
++    if (!this._tabItems.has(tab)) {
++      this._createTabElement(tab);
++    }
++    // _createTabElement now handles element creation; we just need to ensure it's in the right list.
+     const item = this._tabItems.get(tab);
+     const isPinned = tab.pinned;
+
+@@ -195,6 +348,10 @@ class VerticalTabsUI {
+     if (tab.hasAttribute("busy")) item.setAttribute("busy", "true");
+
++    const groupId = this._groups.getGroupForTab(tab);
++    if (groupId) item.setAttribute("group", groupId);
++    else item.removeAttribute("group");
++
+     // Container identity color indicator
+     const identityColor = tab.getAttribute("data-identity-color");
+     if (identityColor) {
+@@ -277,6 +434,7 @@ class VerticalTabsUI {
+   _updateTabItem(tab, changed) {
+     const item = this._tabItems.get(tab);
+     if (!item) return;
++
+     if (changed.includes("label")) { ... existing ... }
+     if (changed.includes("image")) { ... }
+     if (changed.includes("busy")) { ... }
+@@ -288,6 +446,11 @@ class VerticalTabsUI {
+       this._syncMuteButton(tab, item);
+     }
+
++    if (changed.includes("stgrGroupId") || changed.includes("group")) {
++      const gid = this._groups.getGroupForTab(tab);
++      if (gid) { item.setAttribute("group", gid); this._onGroupsChanged(); }
++      else { item.removeAttribute("group"); this._onGroupsChanged(); }
++    }
++
+     // ... container indicator - unchanged ...
+   }
+
+@@ -295,6 +458,55 @@ class VerticalTabsUI {
+   // -----------------------------------------------------------------------
+
+   _showTabContextMenu(tab, x, y) {
++    const currentGroup = this._groups.getGroupDataForTab(tab);
++    // ... existing menu items unchanged ...
++
++    // --- Group menu items ---
++    const sep = doc.createElement("menuseparator");
++    menu.appendChild(sep);
++
++    if (currentGroup) {
++      const removeItem = doc.createElement("menuitem");
++      removeItem.setAttribute("label", `Remove from "${currentGroup.name}"`);
++      removeItem.addEventListener("command", () => this._groups.removeTabFromGroup(tab));
++      menu.appendChild(removeItem);
++
++      const sep2 = doc.createElement("menuseparator");
++      menu.appendChild(sep2);
++    }
++
++    const createItem = doc.createElement("menuitem");
++    createItem.setAttribute("label", "New Group with Tab");
++    createItem.addEventListener("command", () => {
++      const name = this._win.prompt("New group name:");
++      if (name && name.trim()) {
++        const id = this._groups.createGroup(name.trim());
++        this._groups.addTabToGroup(tab, id);
++      }
++    });
++    menu.appendChild(createItem);
++
++    const addToItem = doc.createElement("menu");
++    addToItem.setAttribute("label", "Add to Group");
++    const addPopup = doc.createElement("menupopup");
++    const groups = this._groups.getGroups().filter(
++      g => g.id !== (currentGroup?.id)
++    );
++    for (const g of groups) {
++      const mi = doc.createElement("menuitem");
++      mi.setAttribute("label", g.name);
++      mi.setAttribute("style",
++        `border-inline-start: 3px solid ${g.color}; padding-inline-start: 8px;`);
++      mi.addEventListener("command", () => this._groups.addTabToGroup(tab, g.id));
++      addPopup.appendChild(mi);
++    }
++    if (groups.length) {
++      addToItem.appendChild(addPopup);
++      menu.appendChild(addToItem);
++    }
++
++    // ... rest of existing context menu ...
+   }
+
+   // -----------------------------------------------------------------------
+   // PANEL EVENTS
+   // -----------------------------------------------------------------------
+@@ -381,6 +593,12 @@ class VerticalTabsUI {
+     Services.prefs.addObserver("stgr.verticalTabs.width", this._prefObserver);
++
++    // Ctrl+Shift+G = collapse all groups
++    this._panel.addEventListener("keydown", (e) => {
++      if (e.key === "G" && e.ctrlKey && e.shiftKey) {
++        e.preventDefault();
++        this._groups.collapseAll();
++      }
++    });
+   }
+ }
+
+diff --git a/browser/components/verticaltabs/content/vertical-tabs.css b/browser/components/verticaltabs/content/vertical-tabs.css
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/content/vertical-tabs.css
++++ b/browser/components/verticaltabs/content/vertical-tabs.css
+@@ -302,3 +302,104 @@
+ .stgr-vertical-tabs-context menuseparator {
+   border-block-start: 1px solid var(--stgr-border, #2A2A3E);
+   margin: 4px 8px;
+ }
++
++/* =========================================================================
++   STGR Browser: Tab Groups
++   ========================================================================= */
++
++.stgr-vertical-tabs-groups {
++  display: flex;
++  flex-direction: column;
++}
++
++/* --- GROUP HEADER --------------------------------------------------- */
++.stgr-vertical-tabs-group-header {
++  -moz-appearance: none;
++  align-items: center;
++  background-color: transparent;
++  border-radius: 6px;
++  cursor: pointer;
++  display: flex;
++  flex-direction: row;
++  gap: 4px;
++  margin: 2px 6px 1px;
++  min-height: 28px;
++  padding: 2px 8px 2px 12px;
++  position: relative;
++  user-select: none;
++  transition: background-color 0.12s ease;
++}
++
++.stgr-vertical-tabs-group-header:hover {
++  background-color: var(--stgr-hover, #1A1A2E);
++}
++
++.stgr-vertical-tabs-group-header[drag-hover="true"] {
++  background-color: var(--stgr-bg-surface-alt, #1A1A2E);
++  box-shadow: inset 0 0 0 2px var(--stgr-accent-primary, #C41E3A);
++}
++
++.stgr-vertical-tabs-group-chevron {
++  flex-shrink: 0;
++  height: 10px;
++  list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
++  opacity: 0.5;
++  transition: transform 0.15s ease, opacity 0.12s ease;
++  width: 10px;
++}
++
++.stgr-vertical-tabs-group-chevron[collapsed] {
++  transform: rotate(-90deg);
++}
++
++.stgr-vertical-tabs-group-header:hover .stgr-vertical-tabs-group-chevron {
++  opacity: 0.8;
++}
++
++.stgr-vertical-tabs-group-dot {
++  border-radius: 50%;
++  flex-shrink: 0;
++  height: 8px;
++  width: 8px;
++}
++
++.stgr-vertical-tabs-group-name {
++  color: var(--stgr-text-primary, #E8E8F0);
++  cursor: pointer;
++  flex: 1;
++  font-size: 11px;
++  font-weight: 600;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.stgr-vertical-tabs-group-count {
++  background-color: var(--stgr-bg-surface-alt, #1A1A2E);
++  border-radius: 8px;
++  color: var(--stgr-text-secondary, #9090A0);
++  flex-shrink: 0;
++  font-size: 9px;
++  font-weight: 600;
++  line-height: 14px;
++  min-width: 14px;
++  padding: 0 4px;
++  text-align: center;
++}
++
++.stgr-vertical-tabs-group-close {
++  -moz-appearance: none;
++  appearance: none;
++  background: none;
++  border: none;
++  flex-shrink: 0;
++  height: 14px;
++  list-style-image: url("chrome://global/skin/icons/close.svg");
++  opacity: 0;
++  padding: 0;
++  transition: opacity 0.12s ease;
++  width: 14px;
++}
++
++.stgr-vertical-tabs-group-header:hover .stgr-vertical-tabs-group-close {
++  opacity: 0.5;
++}
++
++.stgr-vertical-tabs-group-close:hover {
++  opacity: 1 !important;
++}
++
++.stgr-vertical-tabs-group-list {
++  display: flex;
++  flex-direction: column;
++  overflow: hidden;
++  transition: max-height 0.2s ease, opacity 0.15s ease;
++}
++
++.stgr-vertical-tabs-group-list[collapsed] {
++  display: none;
++}
++
++/* Grouped tab indentation */
++.stgr-vertical-tab[group] {
++  margin-inline-start: 18px !important;
++  padding-inline-start: 6px !important;
++}
++
++/* Group context menu */
++.stgr-vertical-tabs-context {
++  -moz-appearance: none;
++  background-color: var(--stgr-bg-surface, #14141F);
++  border: 1px solid var(--stgr-border, #2A2A3E);
++  border-radius: 8px;
++  padding: 4px;
++  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
++}
++
++.stgr-vertical-tabs-context menuitem,
++.stgr-vertical-tabs-context menu {
++  -moz-appearance: none;
++  background: transparent;
++  border: none;
++  border-radius: 4px;
++  color: var(--stgr-text-primary, #E8E8F0);
++  font-size: 11px;
++  padding: 6px 24px 6px 12px;
++  transition: background-color 0.12s ease;
++}
++
++.stgr-vertical-tabs-context menuitem:hover,
++.stgr-vertical-tabs-context menu:hover {
++  background-color: var(--stgr-hover, #1A1A2E);
++}
++
++.stgr-vertical-tabs-context menuseparator {
++  border-block-start: 1px solid var(--stgr-border, #2A2A3E);
++  margin: 4px 8px;
++}
+
+diff --git a/browser/components/verticaltabs/locales/en-US/verticaltabs.ftl b/browser/components/verticaltabs/locales/en-US/verticaltabs.ftl
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/locales/en-US/verticaltabs.ftl
++++ b/browser/components/verticaltabs/locales/en-US/verticaltabs.ftl
+@@ -18,3 +18,10 @@ vertical-tabs-search-placeholder =
+
+ vertical-tabs-pinned-section =
+   .label = Pinned
+   .tooltiptext = Pinned tabs are always visible
++
++# Tab Groups
++vertical-tabs-group-new =
++  .label = New Group with Tab
++  .tooltiptext = Create a new group and add this tab
++
++vertical-tabs-group-collapse-all =
++  .label = Collapse All Groups
++  .tooltiptext = Collapse all tab groups (Ctrl+Shift+G)

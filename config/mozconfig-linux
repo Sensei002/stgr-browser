@@ -1,0 +1,75 @@
+# STGR Browser - Linux Optimized mozconfig
+# ============================================================================
+# For Linux x86_64 builds (Ubuntu/Debian/Fedora/Arch/etc.)
+# Uses GTK3 toolkit, Wayland/X11 display server, ALSA/PulseAudio audio,
+# VA-API hardware video decoding, and WebRender GPU rendering.
+# ============================================================================
+
+# Build project
+ac_add_options --enable-application=browser
+
+# Branding
+ac_add_options --with-app-name=stgr-browser
+ac_add_options --with-app-basename=STGR
+ac_add_options --with-branding=stgr/branding
+ac_add_options --with-unsigned-addon-scopes=app,system
+ac_add_options --allow-addon-sideload
+
+# Architecture optimizations
+ac_add_options --enable-optimize="-O3 -march=native -mtune=native"
+ac_add_options --enable-debug-symbols
+ac_add_options --disable-elf-hack
+ac_add_options --enable-release
+
+# Security
+ac_add_options --enable-hardening
+ac_add_options --enable-fuzzing-safe
+ac_add_options --enable-sandbox
+ac_add_options --enable-site-isolation
+
+# Graphics - Linux specific
+ac_add_options --enable-default-toolkit=cairo-gtk3
+ac_add_options --enable-webrender
+ac_add_options --enable-gpu-rasterization
+ac_add_options --enable-skia
+ac_add_options --enable-webgl
+ac_add_options --enable-wayland
+ac_add_options --enable-xrandr
+ac_add_options --enable-dmabuf
+
+# Audio - Linux specific
+ac_add_options --enable-alsa
+ac_add_options --enable-pulseaudio
+
+# Performance
+ac_add_options --enable-jemalloc
+ac_add_options --enable-pgo
+ac_add_options --enable-lto
+ac_add_options --enable-ffmpeg
+ac_add_options --enable-av1
+
+# Disable unnecessary features
+ac_add_options --disable-crashreporter
+ac_add_options --disable-tests
+ac_add_options --disable-debug
+ac_add_options --disable-profiling
+ac_add_options --disable-js-shell
+ac_add_options --disable-geckoview
+ac_add_options --disable-necko-wifi
+ac_add_options --disable-parental-controls
+
+# Media - Linux specific
+ac_add_options --enable-openh264
+ac_add_options --enable-hardware-media-keys
+ac_add_options --enable-vaapi
+
+# Codec support
+ac_add_options --with-system-png
+ac_add_options --with-system-jpeg
+ac_add_options --with-system-zlib
+
+# Build output
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-build-stgr
+
+# D-Bus integration (Linux specific)
+ac_add_options --enable-dbus

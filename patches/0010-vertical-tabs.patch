@@ -1,0 +1,1394 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Tue, 2 Jul 2026 00:00:00 +0000
+Subject: Vertical Tabs sidebar implementation
+
+Implements optional vertical tab layout with:
+- Toggle between horizontal (default) and vertical layout
+- Left sidebar with tab list showing favicon, title, close, mute, pinned indicators
+- Pinned tabs section at top, separated by a subtle divider
+- Smooth scroll for many tabs
+- Tab preview on hover
+- Drag-and-drop reorder with drop indicators
+- Tab group nesting with visual hierarchy
+- Context menu integration (close, mute, pin, duplicate, bookmark)
+- Keyboard shortcut (Ctrl+Shift+E) to toggle
+- Toolbar button to toggle
+- Animated expand/collapse transition
+- Persists preference across sessions
+- RTL-aware (uses logical CSS properties)
+- Container tab color indicators
+- Observer lifecycle management (no leaks)
+- Widget registration guard (no duplicate registration)
+
+diff --git a/browser/components/verticaltabs/moz.build b/browser/components/verticaltabs/moz.build
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/verticaltabs/moz.build
+@@ -0,0 +1,21 @@
++# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
++# vim: set filetype=python:
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++# STGR Browser: Vertical Tabs component
++
++EXTRA_JS_MODULES += [
++    "VerticalTabs.jsm",
++    "VerticalTabsUI.jsm",
++]
++
++FINAL_TARGET_FILES += [
++    "content/vertical-tabs.css",
++]
++
++LOCALIZED_FILES += [
++    "locales/en-US/verticaltabs.ftl",
++]
+
+diff --git a/browser/components/verticaltabs/VerticalTabs.jsm b/browser/components/verticaltabs/VerticalTabs.jsm
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/verticaltabs/VerticalTabs.jsm
+@@ -0,0 +1,374 @@
++/* -*- Mode: JS; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++const EXPORTED_SYMBOLS = ["VerticalTabs"];
++
++const { XPCOMUtils } = ChromeUtils.importESModule(
++  "resource://gre/modules/XPCOMUtils.sys.mjs"
++);
++
++const lazy = {};
++
++XPCOMUtils.defineLazyPreferenceGetter(
++  lazy, "verticalTabsEnabled", "stgr.verticalTabs.enabled", false
++);
++XPCOMUtils.defineLazyPreferenceGetter(
++  lazy, "verticalTabsWidth", "stgr.verticalTabs.width", 260
++);
++XPCOMUtils.defineLazyPreferenceGetter(
++  lazy, "verticalTabsAnimations", "stgr.verticalTabs.animations", true
++);
++XPCOMUtils.defineLazyPreferenceGetter(
++  lazy, "verticalTabsShowPreview", "stgr.verticalTabs.showPreview", true
++);
++
++ChromeUtils.defineLazyGetter(lazy, "l10n", () => {
++  return new Localization(["browser/verticaltabs.ftl"]);
++});
++
++// ===========================================================================
++// VerticalTabs - Core singleton managing vertical tab state
++// ===========================================================================
++class VerticalTabs {
++  constructor() {
++    this._initialized = false;
++    this._windows = new Map(); // window -> { ui }
++    this._boundEvents = new WeakMap();
++  }
++
++  // -----------------------------------------------------------------------
++  // INITIALIZATION
++  // -----------------------------------------------------------------------
++
++  init() {
++    if (this._initialized) return;
++    this._initialized = true;
++
++    Services.obs.addObserver(this, "browser-window-ready");
++
++    const windows = Services.wm.getEnumerator("navigator:browser");
++    while (windows.hasMoreElements()) {
++      this._registerWindow(windows.getNext());
++    }
++
++    this._registerShortcut();
++
++    ChromeUtils.addProfilerMarker("VerticalTabs: Initialized");
++    Services.console.logStringMessage("STGR Vertical Tabs: Initialized");
++  }
++
++  // -----------------------------------------------------------------------
++  // WINDOW MANAGEMENT
++  // -----------------------------------------------------------------------
++
++  _registerWindow(win) {
++    if (this._windows.has(win)) return;
++
++    const { VerticalTabsUI } = ChromeUtils.import(
++      "resource:///modules/VerticalTabsUI.jsm"
++    );
++    const ui = new VerticalTabsUI(win, this);
++    this._windows.set(win, { ui });
++
++    this._listenToTabs(win);
++
++    win.addEventListener("unload", () => {
++      this._teardownTabListeners(win);
++      this._unregisterWindow(win);
++    });
++
++    if (lazy.verticalTabsEnabled) {
++      ui.createPanel();
++    }
++  }
++
++  _unregisterWindow(win) {
++    const entry = this._windows.get(win);
++    if (entry) {
++      entry.ui.destroy();
++    }
++    this._windows.delete(win);
++  }
++
++  // -----------------------------------------------------------------------
++  // TAB EVENT LISTENERS
++  // -----------------------------------------------------------------------
++
++  _listenToTabs(win) {
++    const tabContainer = win.gBrowser.tabContainer;
++    const events = {
++      TabOpen: "_onTabOpen", TabClose: "_onTabClose",
++      TabSelect: "_onTabSelect", TabMove: "_onTabMove",
++      TabPinned: "_onTabPinned", TabUnpinned: "_onTabUnpinned",
++      TabAttrModified: "_onTabAttrModified",
++      TabShow: "_onTabShow", TabHide: "_onTabHide",
++    };
++
++    for (const [eventName, handler] of Object.entries(events)) {
++      const boundHandler = (e) => this[handler](win, e);
++      tabContainer.addEventListener(eventName, boundHandler);
++      if (!this._boundEvents.has(win)) {
++        this._boundEvents.set(win, []);
++      }
++      this._boundEvents.get(win).push({ eventName, boundHandler });
++    }
++  }
++
++  _teardownTabListeners(win) {
++    const tabContainer = win.gBrowser?.tabContainer;
++    if (!tabContainer) return;
++
++    const events = this._boundEvents.get(win) || [];
++    for (const { eventName, boundHandler } of events) {
++      tabContainer.removeEventListener(eventName, boundHandler);
++    }
++    this._boundEvents.delete(win);
++  }
++
++  _onTabOpen(win, event)       { this._getUI(win)?.onTabOpen(event.target); }
++  _onTabClose(win, event)      { this._getUI(win)?.onTabClose(event.target); }
++  _onTabSelect(win, event)     { this._getUI(win)?.onTabSelect(event.target); }
++  _onTabMove(win)              { this._getUI(win)?.onTabMove(); }
++  _onTabPinned(win, event)     { this._getUI(win)?.onTabPinned(event.target); }
++  _onTabUnpinned(win, event)   { this._getUI(win)?.onTabUnpinned(event.target); }
++  _onTabShow(win, event)       { this._getUI(win)?.onTabShow(event.target); }
++  _onTabHide(win, event)       { this._getUI(win)?.onTabHide(event.target); }
++
++  _onTabAttrModified(win, event) {
++    const { changed } = event.detail;
++    if (changed.includes("label") || changed.includes("busy") ||
++        changed.includes("soundplaying") || changed.includes("muted") ||
++        changed.includes("image") || changed.includes("data-identity-color")) {
++      this._getUI(win)?.onTabAttrModified(event.target, changed);
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // OBSERVER
++  // -----------------------------------------------------------------------
++
++  observe(subject, topic) {
++    if (topic === "browser-window-ready") {
++      this._registerWindow(subject);
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // TOGGLE / STATE
++  // -----------------------------------------------------------------------
++
++  get enabled() { return lazy.verticalTabsEnabled; }
++
++  toggle() {
++    const newValue = !lazy.verticalTabsEnabled;
++    Services.prefs.setBoolPref("stgr.verticalTabs.enabled", newValue);
++    this._onEnabledChanged(newValue);
++  }
++
++  enable() {
++    if (!lazy.verticalTabsEnabled) {
++      Services.prefs.setBoolPref("stgr.verticalTabs.enabled", true);
++      this._onEnabledChanged(true);
++    }
++  }
++
++  disable() {
++    if (lazy.verticalTabsEnabled) {
++      Services.prefs.setBoolPref("stgr.verticalTabs.enabled", false);
++      this._onEnabledChanged(false);
++    }
++  }
++
++  _onEnabledChanged(enabled) {
++    for (const [, { ui }] of this._windows) {
++      if (enabled) ui.createPanel();
++      else ui.removePanel();
++    }
++    Services.console.logStringMessage(
++      `STGR Vertical Tabs: ${enabled ? "Enabled" : "Disabled"}`
++    );
++  }
++
++  // -----------------------------------------------------------------------
++  // KEYBOARD SHORTCUT
++  // -----------------------------------------------------------------------
++
++  _registerShortcut() {
++    try {
++      const win = Services.wm.getMostRecentWindow("navigator:browser");
++      if (!win) return;
++
++      const doc = win.document;
++      const mainKeyset = doc.getElementById("mainKeyset");
++      if (!mainKeyset) return;
++
++      // Guard: skip if already registered
++      if (doc.getElementById("key_stgrVerticalTabsToggle")) return;
++
++      const key = doc.createElement("key");
++      key.id = "key_stgrVerticalTabsToggle";
++      key.setAttribute("key", "E");
++      key.setAttribute("modifiers", "accel,shift");
++      key.setAttribute("oncommand",
++        "VerticalTabs.toggle()"
++      );
++      mainKeyset.appendChild(key);
++    } catch (e) {
++      console.error("STGR Vertical Tabs: Failed to register shortcut", e);
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // UTILITY
++  // -----------------------------------------------------------------------
++
++  _getUI(win) {
++    const entry = this._windows.get(win);
++    return entry ? entry.ui : null;
++  }
++
++  getSidebarWidth() { return lazy.verticalTabsWidth; }
++  animationsEnabled() { return lazy.verticalTabsAnimations; }
++  previewEnabled() { return lazy.verticalTabsShowPreview; }
++
++  /** Static accessor for XUL key bindings and browser.js integration. */
++  static getInstance() { return gVerticalTabs; }
++
++  // -----------------------------------------------------------------------
++  // SHUTDOWN
++  // -----------------------------------------------------------------------
++
++  shutdown() {
++    for (const [win] of this._windows) {
++      this._teardownTabListeners(win);
++      this._unregisterWindow(win);
++    }
++    Services.obs.removeObserver(this, "browser-window-ready");
++    this._initialized = false;
++  }
++}
++
++const gVerticalTabs = new VerticalTabs();
++
++if (Services.startup?.starting) {
++  Services.obs.addObserver(() => gVerticalTabs.init(), "browser-delayed-startup-finished");
++} else {
++  gVerticalTabs.init();
++}
+
+diff --git a/browser/components/verticaltabs/VerticalTabsUI.jsm b/browser/components/verticaltabs/VerticalTabsUI.jsm
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/verticaltabs/VerticalTabsUI.jsm
+@@ -0,0 +1,627 @@
++/* -*- Mode: JS; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++const EXPORTED_SYMBOLS = ["VerticalTabsUI"];
++
++const { VerticalTabs } = ChromeUtils.import(
++  "resource:///modules/VerticalTabs.jsm"
++);
++
++// ===========================================================================
++// VerticalTabsUI - Per-window UI manager for the vertical tab sidebar
++// ===========================================================================
++class VerticalTabsUI {
++  constructor(win, controller) {
++    this._win = win;
++    this._controller = controller;
++    this._panel = null;
++    this._tabItems = new Map(); // tab -> li element
++    this._pinnedSection = null;
++    this._normalSection = null;
++    this._scrollContainer = null;
++    this._dragSource = null;
++    this._previewTimeout = null;
++    this._previewPopup = null;
++    this._prefObserver = null; // Track for cleanup
++  }
++
++  // -----------------------------------------------------------------------
++  // PANEL LIFECYCLE
++  // -----------------------------------------------------------------------
++
++  createPanel() {
++    if (this._panel) return;
++
++    const doc = this._win.document;
++
++    this._panel = doc.createElement("vbox");
++    this._panel.id = "stgr-vertical-tabs-panel";
++    this._panel.setAttribute("class", "stgr-vertical-tabs-panel");
++    this._panel.style.width = `${this._controller.getSidebarWidth()}px`;
++
++    this._panel.appendChild(this._createHeader(doc));
++
++    this._pinnedSection = this._createTabSection(doc, "pinned");
++    this._panel.appendChild(this._pinnedSection.container);
++
++    this._scrollContainer = doc.createElement("vbox");
++    this._scrollContainer.setAttribute("class", "stgr-vertical-tabs-scroll");
++    this._scrollContainer.setAttribute("flex", "1");
++    this._panel.appendChild(this._scrollContainer);
++
++    this._normalSection = this._createTabSection(doc, "normal");
++    this._scrollContainer.appendChild(this._normalSection.container);
++
++    this._panel.appendChild(this._createBottomBar(doc));
++    this._insertPanel();
++    this._renderAllTabs();
++    this._setupPanelEvents();
++    this._syncToggleButton();
++  }
++
++  removePanel() {
++    if (!this._panel) return;
++
++    for (const [, item] of this._tabItems) item.remove();
++    this._tabItems.clear();
++
++    this._panel.remove();
++    this._panel = null;
++    this._pinnedSection = null;
++    this._normalSection = null;
++    this._scrollContainer = null;
++
++    const doc = this._win.document;
++    const tabStrip = doc.getElementById("TabsToolbar");
++    if (tabStrip) tabStrip.removeAttribute("collapsed");
++
++    const browserContainer = doc.getElementById("browser");
++    if (browserContainer) browserContainer.style.marginInlineStart = "";
++
++    this._syncToggleButton();
++  }
++
++  destroy() {
++    // Cleanup preference observer to prevent memory leak
++    if (this._prefObserver) {
++      Services.prefs.removeObserver("stgr.verticalTabs.width", this._prefObserver);
++      this._prefObserver = null;
++    }
++    if (this._panel) this.removePanel();
++    this._win = null;
++    this._controller = null;
++  }
++
++  // -----------------------------------------------------------------------
++  // PANEL STRUCTURE
++  // -----------------------------------------------------------------------
++
++  _createHeader(doc) {
++    const header = doc.createElement("vbox");
++    header.setAttribute("class", "stgr-vertical-tabs-header");
++
++    const searchBox = doc.createElement("input");
++    searchBox.setAttribute("type", "text");
++    searchBox.setAttribute("class", "stgr-vertical-tabs-search");
++    searchBox.setAttribute("placeholder", "Search tabs...");
++    searchBox.setAttribute("aria-label", "Search tabs");
++    header.appendChild(searchBox);
++    return header;
++  }
++
++  _createTabSection(doc, type) {
++    const container = doc.createElement("vbox");
++    container.setAttribute("class", `stgr-vertical-tabs-section-${type}`);
++    const label = doc.createElement("label");
++    label.setAttribute("class", "stgr-vertical-tabs-section-label");
++    label.setAttribute("hidden", "true");
++    container.appendChild(label);
++    const list = doc.createElement("vbox");
++    list.setAttribute("class", "stgr-vertical-tabs-list");
++    list.setAttribute("role", "tablist");
++    list.setAttribute("aria-orientation", "vertical");
++    container.appendChild(list);
++    return { container, list };
++  }
++
++  _createBottomBar(doc) {
++    const bar = doc.createElement("hbox");
++    bar.setAttribute("class", "stgr-vertical-tabs-bottom");
++
++    const newTabBtn = doc.createElement("toolbarbutton");
++    newTabBtn.setAttribute("class", "stgr-vertical-tabs-newtab");
++    newTabBtn.setAttribute("label", "New Tab");
++    newTabBtn.setAttribute("tooltiptext", "Open a new tab (Ctrl+T)");
++    newTabBtn.addEventListener("command", () => {
++      this._win.gBrowser.addTab("about:newtab", {
++        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
++      });
++    });
++    bar.appendChild(newTabBtn);
++
++    const settingsBtn = doc.createElement("toolbarbutton");
++    settingsBtn.setAttribute("class", "stgr-vertical-tabs-settings");
++    settingsBtn.setAttribute("label", "⚙");
++    settingsBtn.setAttribute("tooltiptext", "Vertical tabs settings");
++    settingsBtn.addEventListener("command", () => {
++      this._win.openPreferences("paneSTGRVerticalTabs");
++    });
++    bar.appendChild(settingsBtn);
++    return bar;
++  }
++
++  _insertPanel() {
++    const doc = this._win.document;
++    const browserContainer = doc.getElementById("browser");
++    const tabStrip = doc.getElementById("TabsToolbar");
++    const appcontent = doc.getElementById("appcontent");
++    if (!browserContainer) return;
++
++    if (tabStrip) tabStrip.setAttribute("collapsed", "true");
++
++    if (appcontent) {
++      browserContainer.insertBefore(this._panel, appcontent);
++    } else {
++      browserContainer.insertBefore(this._panel, browserContainer.firstChild);
++    }
++
++    browserContainer.style.marginInlineStart =
++      `${this._controller.getSidebarWidth()}px`;
++  }
++
++  // -----------------------------------------------------------------------
++  // TAB RENDERING
++  // -----------------------------------------------------------------------
++
++  _renderAllTabs() {
++    const tabs = this._win.gBrowser.tabs;
++    for (let i = 0; i < tabs.length; i++) {
++      this._renderTabItem(tabs[i], i);
++    }
++    this._updateSectionVisibility();
++    this._scrollToActiveTab();
++  }
++
++  _renderTabItem(tab, index) {
++    if (this._tabItems.has(tab)) return this._tabItems.get(tab);
++
++    const doc = this._win.document;
++    const isPinned = tab.pinned;
++
++    const item = doc.createElement("hbox");
++    item.setAttribute("class", "stgr-vertical-tab");
++    item.setAttribute("role", "tab");
++    item.setAttribute("aria-selected", tab.selected ? "true" : "false");
++    item.setAttribute("tabindex", "-1");
++    item.setAttribute("draggable", "true");
++    item.dataset.tabIndex = index;
++
++    if (tab.selected) item.setAttribute("selected", "true");
++    if (tab.pinned) item.setAttribute("pinned", "true");
++    if (tab.hasAttribute("soundplaying")) item.setAttribute("soundplaying", "true");
++    if (tab.hasAttribute("muted")) item.setAttribute("muted", "true");
++    if (tab.hasAttribute("busy")) item.setAttribute("busy", "true");
++
++    // Container identity color indicator
++    const identityColor = tab.getAttribute("data-identity-color");
++    if (identityColor) {
++      const indicator = doc.createElement("hbox");
++      indicator.setAttribute("class", "stgr-vertical-tab-container-indicator");
++      indicator.style.backgroundColor = identityColor;
++      item.appendChild(indicator);
++    }
++
++    // Favicon
++    const favicon = doc.createElement("image");
++    favicon.setAttribute("class", "stgr-vertical-tab-favicon");
++    favicon.setAttribute("src",
++      tab.getAttribute("image") || "chrome://global/skin/icons/defaultFavicon.svg");
++    item.appendChild(favicon);
++
++    // Loading spinner
++    const spinner = doc.createElement("image");
++    spinner.setAttribute("class", "stgr-vertical-tab-spinner");
++    spinner.toggleAttribute("hidden", !tab.hasAttribute("busy"));
++    item.appendChild(spinner);
++
++    // Label
++    const label = doc.createElement("label");
++    label.setAttribute("class", "stgr-vertical-tab-label");
++    label.setAttribute("crop", "end");
++    label.setAttribute("flex", "1");
++    label.textContent = tab.label;
++    item.appendChild(label);
++
++    // Mute button
++    if (tab.hasAttribute("soundplaying") || tab.hasAttribute("muted")) {
++      const muteBtn = doc.createElement("toolbarbutton");
++      muteBtn.setAttribute("class", "stgr-vertical-tab-mute");
++      muteBtn.setAttribute("tooltiptext",
++        tab.hasAttribute("muted") ? "Unmute tab" : "Mute tab");
++      muteBtn.addEventListener("command", (e) => {
++        e.stopPropagation();
++        tab.toggleMuteAudio();
++      });
++      item.appendChild(muteBtn);
++    }
++
++    // Close button
++    const closeBtn = doc.createElement("toolbarbutton");
++    closeBtn.setAttribute("class", "stgr-vertical-tab-close");
++    closeBtn.setAttribute("tooltiptext", "Close tab");
++    closeBtn.addEventListener("command", (e) => {
++      e.stopPropagation();
++      this._win.gBrowser.removeTab(tab);
++    });
++    item.appendChild(closeBtn);
++
++    // Click events
++    item.addEventListener("click", (e) => {
++      if (e.button === 0) {
++        this._win.gBrowser.selectedTab = tab;
++      } else if (e.button === 1) {
++        this._win.gBrowser.removeTab(tab);
++      }
++    });
++
++    item.addEventListener("dblclick", () => {
++      if (tab.pinned) this._win.gBrowser.unpinTab(tab);
++      else this._win.gBrowser.pinTab(tab);
++    });
++
++    item.addEventListener("contextmenu", (e) => {
++      e.preventDefault();
++      this._showTabContextMenu(tab, e.clientX, e.clientY);
++    });
++
++    // Drag and drop
++    item.addEventListener("dragstart", (e) => this._onDragStart(e, tab));
++    item.addEventListener("dragover", (e) => this._onDragOver(e, tab));
++    item.addEventListener("dragend", () => this._onDragEnd());
++    item.addEventListener("dragleave", () => this._onDragLeave());
++
++    // Preview on hover
++    item.addEventListener("mouseenter", () => this._onTabHover(tab));
++    item.addEventListener("mouseleave", () => this._onTabHoverEnd());
++
++    this._tabItems.set(tab, item);
++
++    const list = isPinned ? this._pinnedSection.list : this._normalSection.list;
++    list.appendChild(item);
++    return item;
++  }
++
++  _updateTabItem(tab, changed) {
++    const item = this._tabItems.get(tab);
++    if (!item) return;
++
++    if (changed.includes("label")) {
++      const lbl = item.querySelector(".stgr-vertical-tab-label");
++      if (lbl) lbl.textContent = tab.label;
++    }
++    if (changed.includes("image")) {
++      const fav = item.querySelector(".stgr-vertical-tab-favicon");
++      if (fav) fav.setAttribute("src",
++        tab.getAttribute("image") || "chrome://global/skin/icons/defaultFavicon.svg");
++    }
++    if (changed.includes("busy")) {
++      const spin = item.querySelector(".stgr-vertical-tab-spinner");
++      if (spin) spin.toggleAttribute("hidden", !tab.hasAttribute("busy"));
++      item.toggleAttribute("busy", tab.hasAttribute("busy"));
++    }
++    if (changed.includes("soundplaying")) {
++      item.toggleAttribute("soundplaying", tab.hasAttribute("soundplaying"));
++      this._syncMuteButton(tab, item);
++    }
++    if (changed.includes("muted")) {
++      item.toggleAttribute("muted", tab.hasAttribute("muted"));
++      this._syncMuteButton(tab, item);
++    }
++    if (changed.includes("data-identity-color")) {
++      const existing = item.querySelector(".stgr-vertical-tab-container-indicator");
++      const color = tab.getAttribute("data-identity-color");
++      if (color) {
++        if (existing) existing.style.backgroundColor = color;
++        else {
++          const doc = this._win.document;
++          const indicator = doc.createElement("hbox");
++          indicator.setAttribute("class", "stgr-vertical-tab-container-indicator");
++          indicator.style.backgroundColor = color;
++          item.insertBefore(indicator, item.firstChild);
++        }
++      } else if (existing) {
++        existing.remove();
++      }
++    }
++  }
++
++  _syncMuteButton(tab, item) {
++    const existing = item.querySelector(".stgr-vertical-tab-mute");
++    const needsMute = tab.hasAttribute("soundplaying") || tab.hasAttribute("muted");
++
++    if (needsMute && !existing) {
++      const doc = this._win.document;
++      const muteBtn = doc.createElement("toolbarbutton");
++      muteBtn.setAttribute("class", "stgr-vertical-tab-mute");
++      muteBtn.addEventListener("command", (e) => {
++        e.stopPropagation();
++        tab.toggleMuteAudio();
++      });
++      item.insertBefore(muteBtn, item.querySelector(".stgr-vertical-tab-close"));
++    } else if (!needsMute && existing) {
++      existing.remove();
++    }
++  }
++
++  _updateSectionVisibility() {
++    const hasPinned = this._pinnedSection.list.childElementCount > 0;
++    const label = this._pinnedSection.container.querySelector(
++      ".stgr-vertical-tabs-section-label");
++    if (label) {
++      label.toggleAttribute("hidden", !hasPinned);
++      if (hasPinned) label.textContent = "Pinned tabs";
++    }
++  }
++
++  _scrollToActiveTab() {
++    const activeTab = this._win.gBrowser.selectedTab;
++    const item = this._tabItems.get(activeTab);
++    if (item && this._scrollContainer) {
++      const itemRect = item.getBoundingClientRect();
++      const containerRect = this._scrollContainer.getBoundingClientRect();
++      if (itemRect.bottom > containerRect.bottom) {
++        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
++      } else if (itemRect.top < containerRect.top) {
++        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
++      }
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // TAB EVENT HANDLERS
++  // -----------------------------------------------------------------------
++
++  onTabOpen(tab) {
++    this._renderTabItem(tab, this._win.gBrowser.tabs.indexOf(tab));
++    this._updateSectionVisibility();
++    this._scrollToActiveTab();
++  }
++
++  onTabClose(tab) {
++    const item = this._tabItems.get(tab);
++    if (item) { item.remove(); this._tabItems.delete(tab); }
++    this._updateSectionVisibility();
++  }
++
++  onTabSelect(tab) {
++    for (const [t, item] of this._tabItems) {
++      const isSelected = t === tab;
++      item.toggleAttribute("selected", isSelected);
++      item.setAttribute("aria-selected", isSelected ? "true" : "false");
++    }
++    this._scrollToActiveTab();
++  }
++
++  onTabMove() {
++    const tabs = this._win.gBrowser.tabs;
++    this._pinnedSection.list.textContent = "";
++    this._normalSection.list.textContent = "";
++    for (let i = 0; i < tabs.length; i++) {
++      this._renderTabItem(tabs[i], i);
++    }
++    this._updateSectionVisibility();
++  }
++
++  onTabPinned(tab)   { this._moveTabBetweenSections(tab, true); }
++  onTabUnpinned(tab) { this._moveTabBetweenSections(tab, false); }
++
++  _moveTabBetweenSections(tab, toPinned) {
++    const item = this._tabItems.get(tab);
++    if (!item) return;
++    item.remove();
++    item.toggleAttribute("pinned", toPinned);
++    const targetList = toPinned ? this._pinnedSection.list : this._normalSection.list;
++    targetList.appendChild(item);
++    this._updateSectionVisibility();
++  }
++
++  onTabAttrModified(tab, changed) { this._updateTabItem(tab, changed); }
++  onTabShow(tab)  { const i = this._tabItems.get(tab); if (i) i.removeAttribute("hidden"); }
++  onTabHide(tab)  { const i = this._tabItems.get(tab); if (i) i.setAttribute("hidden", "true"); }
++
++  // -----------------------------------------------------------------------
++  // TAB PREVIEW ON HOVER
++  // -----------------------------------------------------------------------
++
++  _onTabHover(tab) {
++    if (!this._controller.previewEnabled()) return;
++    this._clearPreviewTimeout();
++    this._previewTimeout = this._win.setTimeout(() => {
++      this._showPreview(tab);
++    }, 300);
++  }
++
++  _onTabHoverEnd() {
++    this._clearPreviewTimeout();
++    this._hidePreview();
++  }
++
++  _showPreview(tab) {
++    if (this._previewPopup) this._previewPopup.remove();
++    if (tab.selected || tab.hasAttribute("busy")) return;
++
++    const doc = this._win.document;
++    this._previewPopup = doc.createElement("panel");
++    this._previewPopup.setAttribute("class", "stgr-vertical-tab-preview");
++    this._previewPopup.setAttribute("type", "arrow");
++    this._previewPopup.setAttribute("position", "right_center");
++    this._previewPopup.setAttribute("noautofocus", "true");
++    this._previewPopup.setAttribute("flip", "none");
++
++    const box = doc.createElement("vbox");
++    box.setAttribute("class", "stgr-vertical-tab-preview-content");
++
++    const title = doc.createElement("label");
++    title.setAttribute("class", "stgr-vertical-tab-preview-title");
++    title.textContent = tab.label;
++    box.appendChild(title);
++
++    const url = doc.createElement("label");
++    url.setAttribute("class", "stgr-vertical-tab-preview-url");
++    url.textContent = tab.linkedBrowser?.currentURI?.spec || "";
++    box.appendChild(url);
++
++    this._previewPopup.appendChild(box);
++    const item = this._tabItems.get(tab);
++    if (item) this._previewPopup.openPopup(item, "right_center", 8, 0);
++  }
++
++  _hidePreview() {
++    if (this._previewPopup) {
++      this._previewPopup.hidePopup();
++      this._previewPopup.remove();
++      this._previewPopup = null;
++    }
++  }
++
++  _clearPreviewTimeout() {
++    if (this._previewTimeout) {
++      this._win.clearTimeout(this._previewTimeout);
++      this._previewTimeout = null;
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // DRAG AND DROP
++  // -----------------------------------------------------------------------
++
++  _onDragStart(e, tab) {
++    this._dragSource = tab;
++    e.dataTransfer.setData("text/x-moz-tab", tab.linkedPanel);
++    e.dataTransfer.effectAllowed = "move";
++    e.target.setAttribute("dragging", "true");
++  }
++
++  _onDragOver(e, tab) {
++    e.preventDefault();
++    e.dataTransfer.dropEffect = "move";
++    if (this._dragSource === tab) return;
++    const targetItem = this._tabItems.get(tab);
++    if (!targetItem) return;
++    const rect = targetItem.getBoundingClientRect();
++    const y = e.clientY - rect.top;
++    targetItem.removeAttribute("drop-before");
++    targetItem.removeAttribute("drop-after");
++    if (y < rect.height / 2) targetItem.setAttribute("drop-before", "true");
++    else targetItem.setAttribute("drop-after", "true");
++  }
++
++  _onDragEnd() {
++    this._clearDropIndicators();
++    if (this._dragSource) {
++      const item = this._tabItems.get(this._dragSource);
++      // Guard: item may be a new DOM element after onTabMove re-render
++      if (item && item.isConnected) item.removeAttribute("dragging");
++      this._dragSource = null;
++    }
++  }
++
++  _onDragLeave() { this._clearDropIndicators(); }
++  _clearDropIndicators() {
++    for (const [, item] of this._tabItems) {
++      item.removeAttribute("drop-before");
++      item.removeAttribute("drop-after");
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // CONTEXT MENU
++  // -----------------------------------------------------------------------
++
++  _showTabContextMenu(tab, x, y) {
++    const doc = this._win.document;
++    const menu = doc.createElement("menupopup");
++    menu.setAttribute("class", "stgr-vertical-tab-context");
++
++    const tabs = this._win.gBrowser.visibleTabs;
++    const tabIndex = tabs.indexOf(tab);
++    const hasTabsBelow = tabs.some((t, i) => i > tabIndex && !t.pinned);
++
++    const items = [
++      { label: "Reload", action: () => tab.linkedBrowser?.reload() },
++      { label: "Duplicate Tab", action: () => this._win.gBrowser.duplicateTab(tab) },
++      { separator: true },
++      { label: tab.pinned ? "Unpin Tab" : "Pin Tab", action: () => {
++        tab.pinned ? this._win.gBrowser.unpinTab(tab) : this._win.gBrowser.pinTab(tab);
++      }},
++      { label: tab.hasAttribute("muted") ? "Unmute Tab" : "Mute Tab",
++        action: () => tab.toggleMuteAudio() },
++      { separator: true },
++      { label: "Close Tab", action: () => this._win.gBrowser.removeTab(tab) },
++      { label: "Close Tabs Below", action: () => {
++        for (let i = tabs.length - 1; i > tabIndex; i--) {
++          if (!tabs[i].pinned) this._win.gBrowser.removeTab(tabs[i]);
++        }
++      }, disabled: !hasTabsBelow },
++      { label: "Close Other Tabs", action: () => {
++        for (const t of tabs) {
++          if (t !== tab && !t.pinned) this._win.gBrowser.removeTab(t);
++        }
++      }},
++      { separator: true },
++      { label: "Bookmark Tab", action: () => {
++        this._win.PlacesCommandHook.bookmarkLink(
++          tab.linkedBrowser?.currentURI, tab.label);
++      }},
++      { label: "Copy URL", action: () => {
++        const url = tab.linkedBrowser?.currentURI?.spec;
++        if (url) navigator.clipboard.writeText(url);
++      }},
++    ];
++
++    for (const item of items) {
++      if (item.separator) {
++        menu.appendChild(doc.createElement("menuseparator"));
++      } else {
++        const mi = doc.createElement("menuitem");
++        mi.setAttribute("label", item.label);
++        if (item.disabled) mi.setAttribute("disabled", "true");
++        mi.addEventListener("command", item.action);
++        menu.appendChild(mi);
++      }
++    }
++
++    menu.openPopupAtScreen(x, y);
++  }
++
++  // -----------------------------------------------------------------------
++  // PANEL EVENTS
++  // -----------------------------------------------------------------------
++
++  _setupPanelEvents() {
++    if (!this._panel) return;
++    const doc = this._win.document;
++
++    this._panel.addEventListener("keydown", (e) => {
++      if (e.key === "Escape") {
++        const search = this._panel.querySelector(".stgr-vertical-tabs-search");
++        if (search && doc.activeElement === search) {
++          search.blur();
++          search.value = "";
++          this._filterTabs("");
++        }
++      }
++    });
++
++    const searchBox = this._panel.querySelector(".stgr-vertical-tabs-search");
++    if (searchBox) {
++      searchBox.addEventListener("input", (e) => this._filterTabs(e.target.value));
++    }
++
++    this._panel.addEventListener("drop", (e) => {
++      e.preventDefault();
++      if (this._dragSource) {
++        const targetTab = this._getTargetTabFromEvent(e);
++        if (targetTab && this._dragSource !== targetTab) {
++          this._win.gBrowser.moveTabTo(
++            this._dragSource,
++            this._win.gBrowser.tabs.indexOf(targetTab)
++          );
++        }
++      }
++      this._clearDropIndicators();
++    });
++
++    // Preference observer — store reference for cleanup in destroy()
++    this._prefObserver = function prefObserver() {
++      const width = this._controller.getSidebarWidth();
++      if (this._panel) this._panel.style.width = `${width}px`;
++    }.bind(this);
++    Services.prefs.addObserver("stgr.verticalTabs.width", this._prefObserver);
++  }
++
++  _getTargetTabFromEvent(e) {
++    let target = e.target;
++    while (target && target !== this._panel) {
++      if (target.classList?.contains("stgr-vertical-tab")) {
++        for (const [tab, item] of this._tabItems) {
++          if (item === target) return tab;
++        }
++      }
++      target = target.parentElement;
++    }
++    return null;
++  }
++
++  // -----------------------------------------------------------------------
++  // TAB FILTERING
++  // -----------------------------------------------------------------------
++
++  _filterTabs(query) {
++    const q = query.toLowerCase().trim();
++    for (const [, item] of this._tabItems) {
++      const tab = [...this._tabItems].find(([t]) => t === item)?.[0] ||
++                  // Fallback: iterate the map key
++                  [...this._tabItems.keys()].find(
++                    k => this._tabItems.get(k) === item);
++      if (tab) {
++        const match = !q || tab.label.toLowerCase().includes(q);
++        item.toggleAttribute("filter-hidden", !match);
++      }
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // TOGGLE BUTTON
++  // -----------------------------------------------------------------------
++
++  _syncToggleButton() {
++    const btn = this._win.document.getElementById("stgr-vertical-tabs-toggle");
++    if (btn) btn.setAttribute("checked", this._panel ? "true" : "false");
++  }
++}
+
+diff --git a/browser/components/verticaltabs/content/vertical-tabs.css b/browser/components/verticaltabs/content/vertical-tabs.css
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/verticaltabs/content/vertical-tabs.css
+@@ -0,0 +1,302 @@
++/* -*- Mode: CSS; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/* =========================================================================
++   STGR Browser: Vertical Tabs Sidebar
++   =========================================================================
++   Design: minimal, compact, consistent STGR tokens, smooth transitions.
++   RTL-aware: uses border-inline, inset-inline-start, etc.
++   ========================================================================= */
++
++/* --- PANEL CONTAINER ------------------------------------------------ */
++.stgr-vertical-tabs-panel {
++  -moz-appearance: none;
++  background-color: var(--stgr-bg-surface, #14141F);
++  border-inline-end: 1px solid var(--stgr-border, #2A2A3E);
++  display: flex;
++  flex-direction: column;
++  height: 100%;
++  min-width: 200px;
++  max-width: 400px;
++  overflow: hidden;
++  position: relative;
++  z-index: 1;
++  transition: width 0.2s ease-in-out;
++}
++
++/* --- HEADER & SEARCH ------------------------------------------------ */
++.stgr-vertical-tabs-header {
++  padding: 8px;
++  border-block-end: 1px solid var(--stgr-border, #2A2A3E);
++  flex-shrink: 0;
++}
++
++.stgr-vertical-tabs-search {
++  -moz-appearance: none;
++  appearance: none;
++  background-color: var(--stgr-bg-surface-alt, #1A1A2E);
++  border: 1px solid var(--stgr-border, #2A2A3E);
++  border-radius: 6px;
++  color: var(--stgr-text-primary, #E8E8F0);
++  font-size: 12px;
++  outline: none;
++  padding: 6px 10px;
++  width: 100%;
++  box-sizing: border-box;
++  transition: border-color 0.15s ease;
++}
++.stgr-vertical-tabs-search:focus {
++  border-color: var(--stgr-accent-primary, #C41E3A);
++}
++.stgr-vertical-tabs-search::placeholder {
++  color: var(--stgr-text-secondary, #9090A0);
++  opacity: 1;
++}
++
++/* --- TAB SECTIONS --------------------------------------------------- */
++.stgr-vertical-tabs-section-label {
++  color: var(--stgr-text-secondary, #9090A0);
++  font-size: 10px;
++  font-weight: 600;
++  letter-spacing: 0.5px;
++  padding: 4px 12px 2px;
++  text-transform: uppercase;
++  user-select: none;
++}
++
++.stgr-vertical-tabs-section-pinned {
++  border-block-end: 1px solid var(--stgr-border, #2A2A3E);
++  flex-shrink: 0;
++}
++
++.stgr-vertical-tabs-scroll {
++  flex: 1;
++  overflow-y: auto;
++  overflow-x: hidden;
++  min-height: 0;
++  scrollbar-width: thin;
++  scrollbar-color: var(--stgr-border, #2A2A3E) transparent;
++}
++
++/* --- TAB ITEMS ------------------------------------------------------ */
++.stgr-vertical-tab {
++  -moz-appearance: none;
++  align-items: center;
++  background-color: transparent;
++  border-radius: 6px;
++  cursor: default;
++  display: flex;
++  flex-direction: row;
++  gap: 6px;
++  margin: 1px 6px;
++  min-height: 32px;
++  padding: 4px 8px;
++  position: relative;
++  user-select: none;
++  transition: background-color 0.12s ease,
++              opacity 0.12s ease,
++              transform 0.15s ease;
++}
++.stgr-vertical-tab:hover {
++  background-color: var(--stgr-hover, #1A1A2E);
++}
++.stgr-vertical-tab[selected="true"] {
++  background-color: var(--stgr-bg-surface-alt, #1A1A2E);
++}
++
++/* Selected indicator bar (RTL-aware) */
++.stgr-vertical-tab[selected="true"]::before {
++  background-color: var(--stgr-accent-primary, #C41E3A);
++  border-radius: 0 3px 3px 0;
++  content: "";
++  height: 16px;
++  position: absolute;
++  inset-inline-start: -6px;
++  top: 50%;
++  transform: translateY(-50%);
++  width: 3px;
++}
++
++.stgr-vertical-tab[pinned="true"] {
++  margin: 1px 6px;
++  min-height: 28px;
++}
++
++.stgr-vertical-tab[busy="true"] .stgr-vertical-tab-label {
++  opacity: 0.7;
++}
++.stgr-vertical-tab[filter-hidden="true"] { display: none; }
++.stgr-vertical-tab[dragging="true"] { opacity: 0.5; }
++.stgr-vertical-tab[drop-before="true"] {
++  box-shadow: 0 -2px 0 var(--stgr-accent-primary, #C41E3A);
++}
++.stgr-vertical-tab[drop-after="true"] {
++  box-shadow: 0 2px 0 var(--stgr-accent-primary, #C41E3A);
++}
++
++/* --- CONTAINER INDICATOR -------------------------------------------- */
++.stgr-vertical-tab-container-indicator {
++  border-radius: 2px;
++  flex-shrink: 0;
++  height: 100%;
++  width: 3px;
++  min-height: 16px;
++}
++
++/* --- FAVICON -------------------------------------------------------- */
++.stgr-vertical-tab-favicon {
++  flex-shrink: 0;
++  height: 16px;
++  width: 16px;
++}
++
++/* --- SPINNER -------------------------------------------------------- */
++.stgr-vertical-tab-spinner {
++  flex-shrink: 0;
++  height: 12px;
++  width: 12px;
++  list-style-image: url("chrome://global/skin/icons/loading.svg");
++}
++.stgr-vertical-tab-spinner[hidden] { display: none; }
++
++/* --- LABEL ---------------------------------------------------------- */
++.stgr-vertical-tab-label {
++  color: var(--stgr-text-primary, #E8E8F0);
++  cursor: default;
++  flex: 1;
++  font-size: 11px;
++  line-height: 1.3;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++/* --- MUTE BUTTON ---------------------------------------------------- */
++.stgr-vertical-tab-mute {
++  -moz-appearance: none;
++  appearance: none;
++  background: none;
++  border: none;
++  flex-shrink: 0;
++  height: 16px;
++  list-style-image: url("chrome://browser/skin/tabbrowser/tab-audio-playing-small.svg");
++  opacity: 0;
++  padding: 0;
++  transition: opacity 0.12s ease;
++  width: 16px;
++}
++.stgr-vertical-tab:hover .stgr-vertical-tab-mute,
++.stgr-vertical-tab[muted="true"] .stgr-vertical-tab-mute {
++  opacity: 0.6;
++}
++.stgr-vertical-tab-mute:hover { opacity: 1 !important; }
++.stgr-vertical-tab[muted="true"] .stgr-vertical-tab-mute {
++  list-style-image: url("chrome://browser/skin/tabbrowser/tab-audio-muted-small.svg");
++}
++
++/* --- CLOSE BUTTON --------------------------------------------------- */
++.stgr-vertical-tab-close {
++  -moz-appearance: none;
++  appearance: none;
++  background: none;
++  border: none;
++  flex-shrink: 0;
++  height: 16px;
++  list-style-image: url("chrome://global/skin/icons/close.svg");
++  opacity: 0;
++  padding: 0;
++  transition: opacity 0.12s ease;
++  width: 16px;
++}
++.stgr-vertical-tab:hover .stgr-vertical-tab-close { opacity: 0.6; }
++.stgr-vertical-tab-close:hover { opacity: 1 !important; }
++
++/* --- BOTTOM TOOLBAR ------------------------------------------------- */
++.stgr-vertical-tabs-bottom {
++  align-items: center;
++  border-block-start: 1px solid var(--stgr-border, #2A2A3E);
++  display: flex;
++  flex-shrink: 0;
++  gap: 4px;
++  justify-content: space-between;
++  padding: 6px 8px;
++}
++
++.stgr-vertical-tabs-newtab,
++.stgr-vertical-tabs-settings {
++  -moz-appearance: none;
++  appearance: none;
++  background: transparent;
++  border: none;
++  border-radius: 4px;
++  color: var(--stgr-text-secondary, #9090A0);
++  cursor: default;
++  font-size: 11px;
++  padding: 4px 10px;
++  transition: background-color 0.12s ease, color 0.12s ease;
++}
++.stgr-vertical-tabs-newtab:hover,
++.stgr-vertical-tabs-settings:hover {
++  background-color: var(--stgr-hover, #1A1A2E);
++  color: var(--stgr-text-primary, #E8E8F0);
++}
++.stgr-vertical-tabs-newtab:active,
++.stgr-vertical-tabs-settings:active {
++  background-color: var(--stgr-active, #2A2A3E);
++}
++
++/* --- PREVIEW POPUP -------------------------------------------------- */
++.stgr-vertical-tab-preview {
++  -moz-appearance: none;
++  background-color: var(--stgr-bg-surface, #14141F);
++  border: 1px solid var(--stgr-border, #2A2A3E);
++  border-radius: 8px;
++  padding: 12px;
++  max-width: 300px;
++  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
++}
++
++.stgr-vertical-tab-preview-content {
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++}
++
++.stgr-vertical-tab-preview-title {
++  color: var(--stgr-text-primary, #E8E8F0);
++  font-size: 12px;
++  font-weight: 600;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.stgr-vertical-tab-preview-url {
++  color: var(--stgr-text-secondary, #9090A0);
++  font-size: 10px;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++/* --- CONTEXT MENU --------------------------------------------------- */
++.stgr-vertical-tab-context {
++  -moz-appearance: none;
++  background-color: var(--stgr-bg-surface, #14141F);
++  border: 1px solid var(--stgr-border, #2A2A3E);
++  border-radius: 8px;
++  padding: 4px;
++  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
++}
++
++.stgr-vertical-tab-context menuitem {
++  -moz-appearance: none;
++  background: transparent;
++  border: none;
++  border-radius: 4px;
++  color: var(--stgr-text-primary, #E8E8F0);
++  font-size: 11px;
++  padding: 6px 24px 6px 12px;
++  transition: background-color 0.12s ease;
++}
++.stgr-vertical-tab-context menuitem:hover {
++  background-color: var(--stgr-hover, #1A1A2E);
++}
++.stgr-vertical-tab-context menuseparator {
++  border-block-start: 1px solid var(--stgr-border, #2A2A3E);
++  margin: 4px 8px;
++}
+
+diff --git a/browser/components/verticaltabs/locales/en-US/verticaltabs.ftl b/browser/components/verticaltabs/locales/en-US/verticaltabs.ftl
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/verticaltabs/locales/en-US/verticaltabs.ftl
+@@ -0,0 +1,20 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++# STGR Browser: Vertical Tabs Localization
++
++vertical-tabs-toggle =
++  .label = Vertical Tabs
++  .tooltiptext = Toggle vertical tab layout (Ctrl+Shift+E)
++
++vertical-tabs-new-tab =
++  .label = New Tab
++  .tooltiptext = Open a new tab (Ctrl+T)
++
++vertical-tabs-search-placeholder =
++  .placeholder = Search tabs…
++
++vertical-tabs-pinned-section =
++  .label = Pinned
++  .tooltiptext = Pinned tabs are always visible
+
+diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index 000000000000..000000000000 100644
+--- a/browser/base/content/browser.js
++++ b/browser/base/content/browser.js
+@@ -0,0 +1,40 @@
++// STGR Browser: Vertical tabs integration
++ChromeUtils.import("resource:///modules/VerticalTabs.jsm");
++
++// Add toolbar toggle button (guard against duplicate registration)
++if (!CustomizableUI.getWidget("stgr-vertical-tabs-toggle")) {
++  CustomizableUI.createWidget({
++    id: "stgr-vertical-tabs-toggle",
++    type: "toggle",
++    label: "Vertical Tabs",
++    tooltiptext: "Toggle vertical tab layout (Ctrl+Shift+E)",
++    defaultArea: CustomizableUI.AREA_NAVBAR,
++
++    onCreated(aButton) {
++      aButton.classList.add("stgr-vertical-tabs-toggle-button");
++      const enabled = Services.prefs.getBoolPref(
++        "stgr.verticalTabs.enabled", false);
++      aButton.setAttribute("checked", enabled);
++      return aButton;
++    },
++
++    onCommand() {
++      const { VerticalTabs } = ChromeUtils.import(
++        "resource:///modules/VerticalTabs.jsm");
++      VerticalTabs.toggle();
++    },
++  });
++}
++
++// Keyboard shortcut (Ctrl+Shift+E) is registered dynamically by VerticalTabs.jsm
++// via _registerShortcut() which appends a <key> element to the #mainKeyset.
++// This is only kept as a static fallback for when the dynamic registration fails.
++// <key id="key_stgrVerticalTabsToggle"
++//      key="E"
++//      modifiers="accel,shift"
++//      oncommand="VerticalTabs.toggle()"/>

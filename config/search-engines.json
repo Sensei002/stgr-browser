@@ -1,0 +1,58 @@
+{
+  "engines": [
+    {
+      "name": "Google",
+      "url": "https://www.google.com/search?q={searchTerms}",
+      "icon": "resource://search-engines/google.ico",
+      "suggestionsURL": "https://suggestqueries.google.com/complete/search?output=firefox&q={searchTerms}",
+      "alias": "@google",
+      "method": "GET",
+      "type": "application/x-moz-search-engine"
+    },
+    {
+      "name": "DuckDuckGo",
+      "url": "https://duckduckgo.com/?q={searchTerms}",
+      "icon": "resource://search-engines/duckduckgo.ico",
+      "suggestionsURL": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
+      "alias": "@ddg",
+      "method": "GET",
+      "type": "application/x-moz-search-engine"
+    },
+    {
+      "name": "Bing",
+      "url": "https://www.bing.com/search?q={searchTerms}",
+      "icon": "resource://search-engines/bing.ico",
+      "suggestionsURL": "https://api.bing.com/osjson.aspx?query={searchTerms}",
+      "alias": "@bing",
+      "method": "GET",
+      "type": "application/x-moz-search-engine"
+    },
+    {
+      "name": "Startpage",
+      "url": "https://www.startpage.com/do/dsearch?query={searchTerms}",
+      "icon": "resource://search-engines/startpage.ico",
+      "alias": "@startpage",
+      "method": "GET",
+      "type": "application/x-moz-search-engine",
+      "privacy": true
+    },
+    {
+      "name": "Brave Search",
+      "url": "https://search.brave.com/search?q={searchTerms}",
+      "icon": "resource://search-engines/brave.ico",
+      "suggestionsURL": "https://search.brave.com/api/suggest?q={searchTerms}",
+      "alias": "@brave",
+      "method": "GET",
+      "type": "application/x-moz-search-engine",
+      "privacy": true
+    }
+  ],
+  "default": "Google",
+  "defaultPrivate": "DuckDuckGo",
+  "oneClickProviders": [
+    "DuckDuckGo",
+    "Bing",
+    "Startpage",
+    "Brave Search"
+  ]
+}

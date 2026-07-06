@@ -1,0 +1,121 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Mon, 1 Jul 2026 00:00:00 +0000
+Subject: STGR Browser UI customization and branding
+
+Implements:
+- STGR Browser UI theme (dark with blue/cyan accents)
+- Simplified toolbar layout
+- Minimal browser chrome
+- Smooth animations
+- Custom new tab page
+- Removed Mozilla branding
+- Added STGR branding throughout UI
+- Clean, modern UI with rounded corners
+- Compact density by default
+
+diff --git a/browser/themes/shared/browser.inc.css b/browser/themes/shared/browser.inc.css
+index 000000000000..000000000000 100644
+--- a/browser/themes/shared/browser.inc.css
++++ b/browser/themes/shared/browser.inc.css
+@@ -0,0 +1,50 @@
++/* STGR Browser: UI Theme Overrides */
++
++/* Color palette */
++:root {
++  --stgr-bg-primary: #0A0A0A;
++  --stgr-bg-surface: #141414;
++  --stgr-bg-surface-alt: #1E1E1E;
++  --stgr-text-primary: #E8E8E8;
++  --stgr-text-secondary: #909090;
++  --stgr-accent-primary: #C41E3A;
++  --stgr-accent-secondary: #8B0000;
++  --stgr-accent-glow: #FF4444;
++  --stgr-border: #2A2A2A;
++  --stgr-hover: #1E1E1E;
++  --stgr-active: #2A2A2A;
++}
++
++/* Compact UI density */
++:root {
++  --tab-min-height: 30px !important;
++  --toolbarbutton-outer-padding: 2px !important;
++  --toolbarbutton-inner-padding: 4px !important;
++  --urlbar-height: 28px !important;
++  --urlbar-toolbar-height: 32px !important;
++  --bookmark-item-padding: 2px 6px !important;
++  --panel-border-radius: 8px !important;
++  --arrowpanel-border-radius: 8px !important;
++  --arrowpanel-padding: 4px !important;
++}
++
++/* Rounded corners */
++.tab-background {
++  border-radius: 6px !important;
++}
++
++.urlbar-input-box {
++  border-radius: 6px !important;
++}
++
++/* Smooth animations */
++.tabbrowser-tab {
++  transition: all 0.15s ease-in-out !important;
++}
++
++/* Remove Mozilla icon from URL bar */
++#identity-box {
++  display: none !important;
++}
++
++/* Simplify toolbar */
++#nav-bar {
++  padding-top: 2px !important;
++  padding-bottom: 2px !important;
++}
+
+diff --git a/browser/base/content/browser-app.js b/browser/base/content/browser-app.js
+index 000000000000..000000000000 100644
+--- a/browser/base/content/browser-app.js
++++ b/browser/base/content/browser-app.js
+@@ -0,0 +1,15 @@
++// STGR Browser: Application branding
++
++// Override application name
++Services.appinfo.name = "STGR Browser";
++
++// Override vendor
++Services.appinfo.vendor = "STGR";
++
++// Override default browser agent
++if (Services.appinfo instanceof Ci.nsIXULAppInfo) {
++  Services.appinfo.name = "STGR Browser";
++}
++
++// Set STGR home page
++Services.prefs.setCharPref("browser.startup.homepage", "about:home");
+
+diff --git a/browser/locales/en-US/browser/branding/brandings.ftl b/browser/locales/en-US/browser/branding/brandings.ftl
+index 000000000000..000000000000 100644
+--- a/browser/locales/en-US/browser/branding/brandings.ftl
++++ b/browser/locales/en-US/browser/branding/brandings.ftl
+@@ -0,0 +1,20 @@
++# STGR Browser Branding Strings
++
++-brand-short-name = STGR
++-brand-full-name = STGR Browser
++-brand-product-name = STGR Browser
++-vendor-short-name = STGR
++
++# Product names
++about-name = STGR Browser
++app-name = STGR Browser
++app-name-version = STGR Browser { $version }
++
++# Copyright
++about-rights = STGR Browser is free and open source software.
++
++# Trademark
++about-trademark = STGR Browser is a trademark of STGR.
++
++# UI strings
++app-menu-title = STGR

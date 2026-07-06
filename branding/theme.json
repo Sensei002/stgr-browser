@@ -1,0 +1,54 @@
+{
+  "name": "STGR Default",
+  "author": "STGR Browser Team",
+  "version": "1.0.0",
+  "manifest_version": 2,
+  "applications": {
+    "gecko": {
+      "id": "default-theme@stgr.browser"
+    }
+  },
+  "theme": {
+    "colors": {
+      "frame": "#0A0A0A",
+      "frame_inactive": "#141414",
+      "toolbar": "#141414",
+      "toolbar_text": "#E8E8E8",
+      "toolbar_field": "#1E1E1E",
+      "toolbar_field_text": "#E8E8E8",
+      "toolbar_field_border": "#2A2A2A",
+      "toolbar_field_focus": "#222222",
+      "toolbar_field_text_focus": "#FFFFFF",
+      "toolbar_field_border_focus": "#C41E3A",
+      "toolbar_top_separator": "#2A2A2A",
+      "toolbar_bottom_separator": "#2A2A2A",
+      "toolbar_vertical_separator": "#2A2A2A",
+      "button_background_hover": "#1E1E1E",
+      "button_background_active": "#2A2A2A",
+      "popup": "#141414",
+      "popup_text": "#E8E8E8",
+      "popup_border": "#2A2A2A",
+      "popup_highlight": "#1E1E1E",
+      "popup_highlight_text": "#FFFFFF",
+      "tab_background_text": "#909090",
+      "tab_text": "#E8E8E8",
+      "tab_line": "#C41E3A",
+      "tab_loading": "#C41E3A",
+      "tab_selected": "#1E1E1E",
+      "icons": "#909090",
+      "icons_attention": "#FF4444",
+      "ntp_background": "#0A0A0A",
+      "ntp_text": "#E8E8E8",
+      "sidebar": "#0A0A0A",
+      "sidebar_text": "#E8E8E8",
+      "sidebar_border": "#2A2A2A",
+      "sidebar_highlight": "#1E1E1E",
+      "sidebar_highlight_text": "#FFFFFF",
+      "bookmark_text": "#E8E8E8"
+    },
+    "properties": {
+      "color_scheme": "dark",
+      "additional_backgrounds": []
+    }
+  }
+}

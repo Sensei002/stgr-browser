@@ -1,0 +1,125 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Mon, 1 Jul 2026 00:00:00 +0000
+Subject: Remove sponsored content, recommendations, and shopping
+
+Removes:
+- Sponsored top sites on new tab page
+- Sponsored suggestions in URL bar
+- Shopping experience (reviews, price tracking)
+- Contextual feature recommendations
+- Weather suggestions in URL bar
+- Yelp suggestions
+- Pocket recommendations
+- Add-on recommendations/CFR
+- New tab page activity stream sponsored features
+
+diff --git a/browser/components/newtab/lib/ActivityStream.jsm b/browser/components/newtab/lib/ActivityStream.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/newtab/lib/ActivityStream.jsm
++++ b/browser/components/newtab/lib/ActivityStream.jsm
+@@ -0,0 +1,38 @@
++// STGR Browser: ActivityStream without sponsored content
++// Modified to remove all sponsored and recommended content features
++
++const { XPCOMUtils } = ChromeUtils.importESModule(
++  "resource://gre/modules/XPCOMUtils.sys.mjs"
++);
++
++const lazy = {};
++
++XPCOMUtils.defineLazyPreferenceGetter(
++  lazy,
++  "showSponsored",
++  "browser.newtabpage.activity-stream.showSponsored",
++  false
++);
++
++// STGR: Override to always disable sponsored content
++function isSponsoredContentEnabled() {
++  return false;
++}
++
++// Remove sponsored top sites from the feed
++function filterSponsoredSites(sites) {
++  if (!sites) return sites;
++  return sites.filter(site => !site.sponsored);
++}
+
+diff --git a/browser/components/newtab/lib/TopSitesFeed.jsm b/browser/components/newtab/lib/TopSitesFeed.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/newtab/lib/TopSitesFeed.jsm
++++ b/browser/components/newtab/lib/TopSitesFeed.jsm
+@@ -0,0 +1,10 @@
++// STGR Browser: Remove sponsored top sites
++// This patch removes sponsored top sites insertion and filtering
++
++// Override: Do not insert sponsored top sites
++TopSitesFeed.prototype._fetchSites = async function() {
++  const sites = await this._fetchDefaults();
++  // STGR: No sponsored sites inserted
++  return sites.filter(site => !site.sponsored);
++};
+
+diff --git a/browser/components/urlbar/UrlbarProviderQuickSuggest.jsm b/browser/components/urlbar/UrlbarProviderQuickSuggest.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/urlbar/UrlbarProviderQuickSuggest.jsm
++++ b/browser/components/urlbar/UrlbarProviderQuickSuggest.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: QuickSuggest (sponsored suggestions) disabled
++// This file intentionally left blank
+
+diff --git a/browser/components/urlbar/UrlbarProviderWeather.jsm b/browser/components/urlbar/UrlbarProviderWeather.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/urlbar/UrlbarProviderWeather.jsm
++++ b/browser/components/urlbar/UrlbarProviderWeather.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: Weather suggestions disabled
++// This file intentionally left blank
+
+diff --git a/browser/components/urlbar/UrlbarProviderYelp.jsm b/browser/components/urlbar/UrlbarProviderYelp.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/urlbar/UrlbarProviderYelp.jsm
++++ b/browser/components/urlbar/UrlbarProviderYelp.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: Yelp suggestions disabled
++// This file intentionally left blank
+
+diff --git a/browser/components/urlbar/UrlbarProviderAddons.jsm b/browser/components/urlbar/UrlbarProviderAddons.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/urlbar/UrlbarProviderAddons.jsm
++++ b/browser/components/urlbar/UrlbarProviderAddons.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: Add-on suggestions in URL bar disabled
++// This file intentionally left blank
+
+diff --git a/browser/components/urlbar/UrlbarProviderPocket.jsm b/browser/components/urlbar/UrlbarProviderPocket.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/urlbar/UrlbarProviderPocket.jsm
++++ b/browser/components/urlbar/UrlbarProviderPocket.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: Pocket suggestions in URL bar disabled
++// This file intentionally left blank
+
+diff --git a/browser/components/urlbar/UrlbarProviderTabToSearch.jsm b/browser/components/urlbar/UrlbarProviderTabToSearch.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/urlbar/UrlbarProviderTabToSearch.jsm
++++ b/browser/components/urlbar/UrlbarProviderTabToSearch.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: Tab-to-search (sponsored) disabled
++// This file intentionally left blank
+
+diff --git a/browser/components/shopping/ShoppingProductManager.jsm b/browser/components/shopping/ShoppingProductManager.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/shopping/ShoppingProductManager.jsm
++++ b/browser/components/shopping/ShoppingProductManager.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: Shopping experience disabled
++// This file intentionally left blank
+
+diff --git a/browser/components/asrouter/ASRouter.jsm b/browser/components/asrouter/ASRouter.jsm
+index 000000000000..000000000000 100644
+--- a/browser/components/asrouter/ASRouter.jsm
++++ b/browser/components/asrouter/ASRouter.jsm
+@@ -0,0 +1,3 @@
++// STGR Browser: Activity Stream Router (CFR, messages) disabled
++// This file intentionally left blank

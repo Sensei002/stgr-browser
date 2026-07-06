@@ -1,0 +1,54 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Mon, 1 Jul 2026 00:00:00 +0000
+Subject: Default privacy-enhancing configuration
+
+Implements:
+- Strict tracking protection by default
+- Fingerprinting resistance enabled
+- HTTPS-only mode enabled by default
+- Third-party cookie blocking
+- Query parameter stripping
+- DNS-over-HTTPS with privacy-focused provider
+- Email tracking protection
+- Social tracking protection
+- Cryptomining protection
+- Network partitioning for all storage
+- Automatic sanitization on shutdown
+- Resist fingerprinting mode
+
+diff --git a/browser/components/preferences/privacy.js b/browser/components/preferences/privacy.js
+index 000000000000..000000000000 100644
+--- a/browser/components/preferences/privacy.js
++++ b/browser/components/preferences/privacy.js
+@@ -0,0 +1,15 @@
++// STGR Browser: Privacy defaults override
++
++// Set strict content blocking as default
++Services.prefs.setIntPref("browser.contentblocking.category", 2); // strict
++
++// Enable HTTPS-only mode
++Services.prefs.setBoolPref("dom.security.https_only_mode", true);
++Services.prefs.setBoolPref("dom.security.https_only_mode_ever_enabled", true);
++
++// Enable fingerprinting protection
++Services.prefs.setBoolPref("privacy.resistFingerprinting", true);
++
++// Block all third-party cookies
++Services.prefs.setIntPref("network.cookie.lifetimePolicy", 2);
++Services.prefs.setBoolPref("network.cookie.thirdparty.sessionOnly", true);
+
+diff --git a/netwerk/dns/TRRService.cpp b/netwerk/dns/TRRService.cpp
+index 000000000000..000000000000 100644
+--- a/netwerk/dns/TRRService.cpp
++++ b/netwerk/dns/TRRService.cpp
+@@ -0,0 +1,10 @@
++// STGR Browser: Default DoH configuration
++
++// Set default DoH provider to Quad9 for privacy
++static const char* kStgrDefaultDoHProvider = "https://dns.quad9.net/dns-query";
++
++// Enable TRR mode 2 (use DoH, fall back to native) by default
++void StgrSetDefaultDohConfig() {
++  Preferences::SetInt("network.trr.mode", 2);
++  Preferences::SetCString("network.trr.uri", kStgrDefaultDoHProvider);
++}

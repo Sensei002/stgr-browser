@@ -1,0 +1,71 @@
+# STGR Browser - Windows Optimized mozconfig
+# ============================================================================
+# For Windows x64 builds (Windows 10/11)
+# Uses cairo-windows toolkit, Direct3D 11/12 and Vulkan for GPU rendering,
+# DirectComposition for compositing, and Direct2D for canvas 2D.
+# ============================================================================
+
+# Build project
+ac_add_options --enable-application=browser
+
+# Branding
+ac_add_options --with-app-name=stgr-browser
+ac_add_options --with-app-basename=STGR
+ac_add_options --with-branding=stgr/branding
+ac_add_options --with-unsigned-addon-scopes=app,system
+ac_add_options --allow-addon-sideload
+
+# Architecture optimizations
+ac_add_options --enable-optimize="-O3 -march=native -mtune=native"
+ac_add_options --enable-debug-symbols
+ac_add_options --disable-elf-hack
+ac_add_options --enable-release
+
+# Security
+ac_add_options --enable-hardening
+ac_add_options --enable-fuzzing-safe
+ac_add_options --enable-sandbox
+ac_add_options --enable-site-isolation
+
+# Graphics - Windows specific
+ac_add_options --enable-default-toolkit=cairo-windows
+ac_add_options --enable-webrender
+ac_add_options --enable-gpu-rasterization
+ac_add_options --enable-skia
+ac_add_options --enable-webgl
+ac_add_options --enable-d3d9
+ac_add_options --enable-d3d11
+ac_add_options --enable-d2d
+
+# Performance
+ac_add_options --enable-jemalloc
+ac_add_options --enable-pgo
+ac_add_options --enable-lto
+ac_add_options --enable-ffmpeg
+ac_add_options --enable-av1
+
+# Disable unnecessary features
+ac_add_options --disable-crashreporter
+ac_add_options --disable-tests
+ac_add_options --disable-debug
+ac_add_options --disable-profiling
+ac_add_options --disable-js-shell
+ac_add_options --disable-geckoview
+ac_add_options --disable-necko-wifi
+ac_add_options --disable-parental-controls
+
+# Media - Windows specific
+ac_add_options --enable-openh264
+ac_add_options --enable-hardware-media-keys
+ac_add_options --enable-win32-log
+
+# Codec support
+ac_add_options --with-system-png
+ac_add_options --with-system-jpeg
+ac_add_options --with-system-zlib
+
+# Build output
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-build-stgr
+
+# Windows-specific toolchain
+ac_add_options --with-toolchain-prefix=

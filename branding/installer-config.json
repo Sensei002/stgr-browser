@@ -1,0 +1,64 @@
+{
+  "installer": {
+    "name": "STGR Browser Setup",
+    "version": "1.0.0",
+    "publisher": "STGR",
+    "executableName": "STGR-Browser-Setup.exe",
+    "appExecutableName": "stgr-browser.exe",
+    "taskManagerName": "STGR Browser",
+    "startMenuFolder": "STGR Browser",
+    "desktopShortcut": true,
+    "startMenuShortcut": true,
+    "taskbarShortcut": false,
+    "registryKeys": {
+      "HKLM\\Software\\Clients\\StartMenuInternet\\STGR Browser": {
+        "FriendlyAppName": "STGR Browser"
+      },
+      "HKLM\\Software\\STGR\\Browser": {
+        "Version": "1.0.0",
+        "InstallDir": "%INSTALL_DIR%"
+      }
+    },
+    "fileAssociations": {
+      "html": true,
+      "htm": true,
+      "xhtml": true,
+      "xht": true,
+      "pdf": true,
+      "svg": true,
+      "webp": true
+    },
+    "protocolHandlers": {
+      "http": true,
+      "https": true,
+      "ftp": false,
+      "mailto": false
+    },
+    "uninstall": {
+      "displayName": "STGR Browser 1.0.0",
+      "displayVersion": "1.0.0",
+      "publisher": "STGR",
+      "installLocation": "%INSTALL_DIR%",
+      "uninstallString": "%INSTALL_DIR%\\uninstall.exe",
+      "displayIcon": "%INSTALL_DIR%\\stgr-browser.exe",
+      "noModify": 1,
+      "noRepair": 1
+    }
+  },
+  "nsis": {
+    "brandingText": "STGR Browser Setup",
+    "installerIcon": "branding/icons/installer.ico",
+    "uninstallerIcon": "branding/icons/uninstaller.ico",
+    "installerHeader": "branding/icons/header.bmp",
+    "welcomeImage": "branding/icons/welcome.bmp",
+    "headerImage": "branding/icons/header.bmp"
+  },
+  "wix": {
+    "manufacturer": "STGR",
+    "productName": "STGR Browser",
+    "productDescription": "A lightweight, privacy-first, gaming-focused browser",
+    "icon": "branding/icons/app.ico",
+    "bannerImage": "branding/icons/wix-banner.bmp",
+    "backgroundImage": "branding/icons/wix-background.bmp"
+  }
+}

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C41E3A;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B0000;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF4444;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C41E3A;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#primaryGrad)" />
+  <!-- Stylized "S" shape - geometric and modern, representing speed/stability -->
+  <path d="M160 160 
+           C160 140 176 124 196 124 
+           L316 124 
+           C336 124 352 140 352 160 
+           L352 220 
+           C352 240 336 256 316 256 
+           L196 256 
+           C176 256 160 272 160 292 
+           L160 352 
+           C160 372 176 388 196 388 
+           L316 388 
+           C336 388 352 372 352 352" 
+        stroke="white" 
+        stroke-width="28" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" 
+        fill="none" />
+  <!-- Speed/performance indicator - small chevron -->
+  <polygon points="380,200 420,256 380,312" fill="white" opacity="0.8" />
+  <!-- Inner glow dot -->
+  <circle cx="256" cy="256" r="80" fill="white" opacity="0.08" />
+</svg>

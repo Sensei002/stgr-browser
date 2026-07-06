@@ -1,0 +1,75 @@
+name: Bug Report
+description: File a bug report to help us improve STGR Browser
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        Please check existing issues before submitting.
+
+  - type: input
+    id: version
+    attributes:
+      label: STGR Browser Version
+      description: What version of STGR Browser are you running? (Check `about:stgr`)
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: Which OS are you using?
+      placeholder: "Windows 11 / Ubuntu 24.04 / macOS 14"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of the bug
+      placeholder: "What happened? What did you expect to happen?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the bug
+      placeholder: |
+        1. Open STGR Browser
+        2. Navigate to ...
+        3. Click on ...
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / Logs
+      description: If applicable, add screenshots, error output, or console logs
+      placeholder: "Paste error output or drag screenshots here"
+
+  - type: dropdown
+    id: privacy
+    attributes:
+      label: Privacy Impact
+      description: Does this bug involve unexpected data collection or network requests?
+      options:
+        - "No"
+        - "Yes — data is sent unexpectedly"
+        - "Unsure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context about the problem
+      placeholder: "Browser extensions installed, recent changes, etc."

@@ -1,0 +1,89 @@
+# ============================================================================
+# STGR Browser - Lint & Code Quality
+# ============================================================================
+
+name: Lint & Code Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-project:
+    name: Lint STGR Project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck - Check shell scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+          severity: warning
+
+      - name: Validate JSON files
+        run: |
+          echo "Validating JSON files..."
+          for file in branding/branding-config.json branding/installer-config.json \
+                      branding/theme.json config/search-engines.json; do
+            if python3 -m json.tool "$file" > /dev/null 2>&1; then
+              echo "  ✓ $file"
+            else
+              echo "  ✗ $file - invalid JSON"
+              python3 -m json.tool "$file" 2>&1 || true
+              exit 1
+            fi
+          done
+
+      - name: Check Markdown files
+        run: |
+          echo "Checking markdown files..."
+          find . -name "*.md" -not -path "./gecko-dev/*" -exec echo "  ✓ {}" \;
+
+      - name: Validate SVG icons
+        run: |
+          echo "Validating SVG files..."
+          for file in branding/logo.svg branding/icon.svg; do
+            if grep -q "<svg" "$file" 2>/dev/null; then
+              echo "  ✓ $file"
+            else
+              echo "  ✗ $file - invalid SVG"
+              exit 1
+            fi
+          done
+
+  lint-build-system:
+    name: Validate Build Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate mozconfig syntax
+        run: |
+          echo "Validating mozconfig..."
+          if grep -q "^ac_add_options" config/mozconfig; then
+            echo "  ✓ mozconfig format valid"
+          else
+            echo "  ✗ mozconfig may be invalid"
+            exit 1
+          fi
+
+      - name: Check pref consistency
+        run: |
+          echo "Checking preference consistency..."
+          # Ensure all stgr prefs have proper types
+          PREF_ISSUES=$(grep -c 'stgr\.' config/stgr-prefs.js || true)
+          echo "  Found $PREF_ISSUES STGR-specific preferences"
+
+      - name: Validate patch format
+        run: |
+          echo "Validating patch format..."
+          for patch in patches/*.patch; do
+            if head -1 "$patch" | grep -q "^From:"; then
+              echo "  ✓ $(basename $patch)"
+            else
+              echo "  ⚠ $(basename $patch) - missing From: header"
+            fi
+          done

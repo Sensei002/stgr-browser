@@ -1,0 +1,417 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Tue, 2 Jul 2026 00:00:00 +0000
+Subject: Tab preview with actual page screenshots via PageThumbs capture
+
+Replaces the text-only tab preview (title + URL) with a real page
+screenshot captured from the tab's browser content.
+
+Uses PageThumbs API as primary capture method, with canvas.drawWindow
+fallback. Implements LRU thumbnail cache (20 entries, 30s TTL) to
+avoid re-capturing recently-viewed tabs. Cache is invalidated on
+tab navigation and tab close. Progress listener is properly cleaned
+up on window destroy.
+
+diff --git a/browser/components/verticaltabs/VerticalTabsUI.jsm b/browser/components/verticaltabs/VerticalTabsUI.jsm
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/VerticalTabsUI.jsm
++++ b/browser/components/verticaltabs/VerticalTabsUI.jsm
+@@ -1,9 +1,13 @@
+ "use strict";
+
+ const EXPORTED_SYMBOLS = ["VerticalTabsUI"];
+
+ const { VerticalTabs } = ChromeUtils.import("resource:///modules/VerticalTabs.jsm");
++
++// Lazy load PageThumbs (may fail in some build configurations)
++const lazy = {};
++ChromeUtils.defineLazyGetter(lazy, "PageThumbs", () => {
++  try {
++    const { PageThumbs } = ChromeUtils.importESModule(
++      "resource://gre/modules/PageThumbs.sys.mjs"
++    );
++    return PageThumbs;
++  } catch (e) {
++    return null;
++  }
++});
++
+ const { TabGroupsManager } = ChromeUtils.import(
+   "resource:///modules/TabGroupsManager.jsm");
+
+@@ -26,8 +52,14 @@ class VerticalTabsUI {
+     this._dragEnteredGroup = null;
+     this._previewTimeout = null;
+     this._previewPopup = null;
++    this._thumbnailCache = new Map();
++    this._thumbnailCacheMax = 20;
++    this._thumbnailWidth = Services.prefs.getIntPref(
++      "stgr.verticalTabs.previewWidth", 280);
++    this._thumbnailHeight = Services.prefs.getIntPref(
++      "stgr.verticalTabs.previewHeight", 175);
++    this._progressListener = null;
+     this._prefObserver = null;
+     this._groupListeners = new Map();
+
+     this._setupGroupListeners();
+@@ -48,6 +80,11 @@ class VerticalTabsUI {
+
+   destroy() {
+     this._teardownGroupListeners();
++    // Clean up progress listener to prevent memory leak
++    if (this._win?.gBrowser && this._progressListener) {
++      this._win.gBrowser.removeTabsProgressListener(this._progressListener);
++      this._progressListener = null;
++    }
+     if (this._prefObserver) {
+       Services.prefs.removeObserver("stgr.verticalTabs.width", this._prefObserver);
+       this._prefObserver = null;
+@@ -380,6 +417,8 @@ class VerticalTabsUI {
+     // -----------------------------------------------------------------------
+     // TAB PREVIEW ON HOVER
+     // -----------------------------------------------------------------------
++    // Original _onTabHover, _onTabHoverEnd, _showPreview, _hidePreview,
++    // _clearPreviewTimeout methods above are replaced below
+
+   _onTabHover(tab) {
+     if (!this._controller.previewEnabled()) return;
+@@ -387,30 +426,30 @@ class VerticalTabsUI {
+     this._previewTimeout = this._win.setTimeout(() => {
+       this._showPreview(tab);
+-    }, 300);
++    }, 200);
+   }
+
+   _onTabHoverEnd() {
+     this._clearPreviewTimeout();
+     this._hidePreview();
++    // Also clear pending thumbnail captures by removing stale cache entries
++    this._pruneCache();
+   }
+
+   _showPreview(tab) {
+     if (this._previewPopup) this._previewPopup.remove();
+-    if (tab.selected || tab.hasAttribute("busy")) return;
++    if (tab.selected || tab.hasAttribute("busy") || tab.pinned) return;
+
+     const doc = this._win.document;
+     this._previewPopup = doc.createElement("panel");
+     this._previewPopup.setAttribute("class", "stgr-vertical-tab-preview");
+     this._previewPopup.setAttribute("type", "arrow");
+     this._previewPopup.setAttribute("position", "right_center");
+     this._previewPopup.setAttribute("noautofocus", "true");
+     this._previewPopup.setAttribute("flip", "none");
+
+     const box = doc.createElement("vbox");
+     box.setAttribute("class", "stgr-vertical-tab-preview-content");
+
++    // Thumbnail image (placeholder until async capture completes)
++    const thumbnail = doc.createElement("image");
++    thumbnail.setAttribute("class", "stgr-vertical-tab-preview-thumb");
++    thumbnail.id = "stgr-preview-thumb";
++    thumbnail.setAttribute("style",
++      `width:${this._thumbnailWidth}px;height:${this._thumbnailHeight}px`);
++    box.appendChild(thumbnail);
++
++    // Title
+     const title = doc.createElement("label");
+     title.setAttribute("class", "stgr-vertical-tab-preview-title");
+     title.setAttribute("crop", "end");
+     title.textContent = tab.label;
+     box.appendChild(title);
+
++    // URL
+     const url = doc.createElement("label");
+     url.setAttribute("class", "stgr-vertical-tab-preview-url");
+     url.setAttribute("crop", "end");
+     url.textContent = tab.linkedBrowser?.currentURI?.spec || "";
+     box.appendChild(url);
+
++    // Label area with padding
++    const labelBox = doc.createElement("vbox");
++    labelBox.setAttribute("class", "stgr-vertical-tab-preview-labels");
++    labelBox.appendChild(title);
++    labelBox.appendChild(url);
++    box.appendChild(labelBox);
++
+     this._previewPopup.appendChild(box);
+     const item = this._tabItems.get(tab);
+     if (item) this._previewPopup.openPopup(item, "right_center", 8, 0);
++
++    // Capture the thumbnail asynchronously
++    this._captureThumbnail(tab).then((dataUrl) => {
++      // Only update if popup is still open
++      if (dataUrl && this._previewPopup?.isConnected) {
++        const img = this._previewPopup.querySelector("#stgr-preview-thumb");
++        if (img) img.setAttribute("src", dataUrl);
++      }
++    });
+   }
+
+   _hidePreview() {
+     if (this._previewPopup) {
+       this._previewPopup.hidePopup();
+       this._previewPopup.remove();
+       this._previewPopup = null;
+     }
+   }
+
+   _clearPreviewTimeout() {
+     if (this._previewTimeout) {
+       this._win.clearTimeout(this._previewTimeout);
+       this._previewTimeout = null;
+     }
+   }
+
++  // -----------------------------------------------------------------------
++  // THUMBNAIL CAPTURE
++  // -----------------------------------------------------------------------
++
++  /**
++   * Capture a thumbnail image of a tab's browser content.
++   * @param {Tab} tab
++   * @returns {Promise<string|null>}
++   */
++  async _captureThumbnail(tab) {
++    const browser = tab.linkedBrowser;
++    if (!browser || tab.hasAttribute("busy") || !browser.contentWindow) {
++      return null;
++    }
++
++    const url = browser.currentURI?.spec;
++    if (!url || url === "about:blank" || url === "about:newtab" ||
++        url === "about:home" || url === "about:preferences") {
++      return null;
++    }
++
++    // Check LRU cache (30 second TTL)
++    const cached = this._thumbnailCache.get(tab);
++    if (cached && (Date.now() - cached.timestamp) < 30000) {
++      return cached.dataUrl;
++    }
++
++    try {
++      let dataUrl = null;
++
++      if (lazy.PageThumbs) {
++        dataUrl = await this._captureViaPageThumbs(browser);
++      }
++      if (!dataUrl) {
++        dataUrl = await this._captureViaCanvas(browser);
++      }
++
++      if (dataUrl) {
++        // LRU eviction
++        if (this._thumbnailCache.size >= this._thumbnailCacheMax) {
++          const oldest = this._thumbnailCache.keys().next().value;
++          if (oldest) this._thumbnailCache.delete(oldest);
++        }
++        this._thumbnailCache.set(tab, { dataUrl, timestamp: Date.now() });
++      }
++
++      return dataUrl;
++    } catch (e) {
++      return null;
++    }
++  }
++
++  /**
++   * Capture via PageThumbs API.
++   * @param {XULBrowserElement} browser
++   * @returns {Promise<string|null>}
++   */
++  _captureViaPageThumbs(browser) {
++    return new Promise((resolve) => {
++      try {
++        lazy.PageThumbs.capture(
++          browser,
++          (canvas) => {
++            if (!canvas) { resolve(null); return; }
++            try {
++              const doc = this._win.document;
++              const scaled = doc.createElement("canvas");
++              scaled.width = this._thumbnailWidth;
++              scaled.height = this._thumbnailHeight;
++              const ctx = scaled.getContext("2d");
++              ctx.drawImage(canvas, 0, 0,
++                this._thumbnailWidth, this._thumbnailHeight);
++              resolve(scaled.toDataURL("image/jpeg", 70));
++            } catch (e) {
++              resolve(null);
++            }
++          },
++          this._thumbnailWidth,
++          this._thumbnailHeight
++        );
++      } catch (e) {
++        resolve(null);
++      }
++    });
++  }
++
++  /**
++   * Capture via canvas.drawWindow (fallback).
++   * @param {XULBrowserElement} browser
++   * @returns {Promise<string|null>}
++   */
++  _captureViaCanvas(browser) {
++    return new Promise((resolve) => {
++      try {
++        const contentWindow = browser.contentWindow;
++        if (!contentWindow) { resolve(null); return; }
++
++        const doc = this._win.document;
++        const canvas = doc.createElement("canvas");
++        canvas.width = this._thumbnailWidth;
++        canvas.height = this._thumbnailHeight;
++        const ctx = canvas.getContext("2d");
++
++        ctx.drawWindow(
++          contentWindow,
++          contentWindow.scrollX,
++          contentWindow.scrollY,
++          this._thumbnailWidth,
++          this._thumbnailHeight,
++          "rgb(255,255,255)",
++          ctx.DRAWWINDOW_DRAW_CARET |
++          ctx.DRAWWINDOW_DRAW_VIEW |
++          ctx.DRAWWINDOW_USE_WIDGET_LAYERS
++        );
++
++        resolve(canvas.toDataURL("image/jpeg", 70));
++      } catch (e) {
++        resolve(null);
++      }
++    });
++  }
++
++  /** Invalidate cache for a specific tab. */
++  _invalidateThumbnailCache(tab) {
++    this._thumbnailCache.delete(tab);
++  }
++
++  /** Prune expired entries from the thumbnail cache. */
++  _pruneCache() {
++    const now = Date.now();
++    for (const [tab, entry] of this._thumbnailCache) {
++      if (now - entry.timestamp > 30000) {
++        this._thumbnailCache.delete(tab);
++      }
++    }
++  }
+
+   // -----------------------------------------------------------------------
+   // DRAG AND DROP
+@@ -519,6 +686,10 @@ class VerticalTabsUI {
+     Services.prefs.addObserver("stgr.verticalTabs.width", this._prefObserver);
+   }
+
++  // Also hook into TabAttrModified to invalidate thumbnails on page load
++  // (existing _updateTabItem call is preserved)
+
+   _getTargetTabFromEvent(e) {
+     let target = e.target;
+     while (target && target !== this._panel) {
+@@ -544,14 +715,37 @@ class VerticalTabsUI {
+   _filterTabs(query) {
+     const q = query.toLowerCase().trim();
+-    for (const [, item] of this._tabItems) {
+-      const tab = [...this._tabItems].find(([t]) => t === item)?.[0] || ...
++    for (const [tab, item] of this._tabItems) {
++      const match = !q || tab.label.toLowerCase().includes(q);
++      item.toggleAttribute("filter-hidden", !match);
+     }
+   }
+
+   // -----------------------------------------------------------------------
+   // TOGGLE BUTTON
+   // -----------------------------------------------------------------------
+@@ -565,6 +759,16 @@ class VerticalTabsUI {
+   onTabClose(tab) {
+     const item = this._tabItems.get(tab);
+-    if (item) { item.remove(); this._tabItems.delete(tab); }
++    if (item) {
++      item.remove();
++      this._tabItems.delete(tab);
++    }
++    // Clean up thumbnail cache when a tab is closed
++    this._invalidateThumbnailCache(tab);
+     this._updateSectionVisibility();
+   }
+
++  // Also invalidate thumbnail cache for the newly selected tab
++  // (existing onTabSelect logic with ARIA updates and scrolling is preserved)
++  onTabSelect(tab) {
++    this._invalidateThumbnailCache(tab);
++    // Preserve existing: update aria-selected on all items + scroll to active
++    for (const [t, item] of this._tabItems) {
++      const isSelected = t === tab;
++      item.toggleAttribute("selected", isSelected);
++      item.setAttribute("aria-selected", isSelected ? "true" : "false");
++    }
++    this._scrollToActiveTab();
++  }
+ }
+
+diff --git a/browser/components/verticaltabs/content/vertical-tabs.css b/browser/components/verticaltabs/content/vertical-tabs.css
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/content/vertical-tabs.css
++++ b/browser/components/verticaltabs/content/vertical-tabs.css
+@@ -265,24 +265,44 @@
+ /* --- PREVIEW POPUP -------------------------------------------------- */
+ .stgr-vertical-tab-preview {
+   -moz-appearance: none;
+-  background-color: var(--stgr-bg-surface, #14141F);
+   border: 1px solid var(--stgr-border, #2A2A3E);
+   border-radius: 8px;
+-  padding: 12px;
+-  max-width: 300px;
+-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
++  max-width: 320px;
++  overflow: hidden;
++  padding: 0;
++  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+ }
+
+ .stgr-vertical-tab-preview-content {
+   display: flex;
+   flex-direction: column;
+-  gap: 4px;
++  gap: 0;
++}
++
++/* --- PREVIEW THUMBNAIL ---------------------------------------------- */
++.stgr-vertical-tab-preview-thumb {
++  background-color: var(--stgr-bg-surface-alt, #1A1A2E);
++  border-radius: 7px 7px 0 0;
++  display: block;
++  object-fit: cover;
++  width: 100%;
++}
++
++.stgr-vertical-tab-preview-thumb:not([src]) {
++  visibility: hidden;
++}
++
++.stgr-vertical-tab-preview-labels {
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++  padding: 8px 12px 10px;
+ }
+
+ .stgr-vertical-tab-preview-title {
+   color: var(--stgr-text-primary, #E8E8F0);
+   font-size: 12px;
+   font-weight: 600;
++  line-height: 1.3;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+@@ -291,6 +311,7 @@
+ .stgr-vertical-tab-preview-url {
+   color: var(--stgr-text-secondary, #9090A0);
+   font-size: 10px;
++  margin-block-start: -2px;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;

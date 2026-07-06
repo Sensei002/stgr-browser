@@ -1,0 +1,726 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Tue, 7 Jul 2026 00:00:00 +0000
+Subject: Enhanced tab search with fuzzy matching, URL search, and keyboard navigation
+
+Upgrades the vertical tabs search box with:
+- Fuzzy matching (type non-contiguous characters, e.g. "gthb" matches "GitHub")
+- URL search (searches page URL in addition to tab title)
+- Match highlighting (matched characters are wrapped in <span> with underline)
+- Keyboard navigation (up/down arrows cycle through filtered results, Enter selects)
+- Search result count badge ("3 of 12 tabs")
+- Quick switch mode (Ctrl+P anywhere in sidebar focuses the search box)
+- Clear button on the search field when input is present
+- Search icon (magnifying glass) at the start of the search field
+- Visual active state on the search header when filtering is active
+- Preferences for fuzzy matching and URL search toggles
+
+diff --git a/browser/components/verticaltabs/VerticalTabsUI.jsm b/browser/components/verticaltabs/VerticalTabsUI.jsm
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/VerticalTabsUI.jsm
++++ b/browser/components/verticaltabs/VerticalTabsUI.jsm
+@@ -14,16 +14,22 @@ class VerticalTabsUI {
+     this._dragSource = null;
+     this._dragEnteredGroup = null;
+     this._previewTimeout = null;
+     this._previewPopup = null;
+     this._autoHideTimeout = null;
+     this._autoHideEnabled = false;
+     this._autoHidePinned = false;
+     this._autoPrefObserver = null;
+     this._autoDocClickListener = null;
++    this._searchQuery = "";
++    this._searchResultIndex = -1;
++    this._searchVisibleResults = [];
++    this._searchFuzzy = true;
++    this._searchUrls = true;
+     this._thumbnailCache = new Map();
+     this._thumbnailCacheMax = 20;
+     this._thumbnailWidth = Services.prefs.getIntPref(
+       "stgr.verticalTabs.previewWidth", 280);
+     this._thumbnailHeight = Services.prefs.getIntPref(
+       "stgr.verticalTabs.previewHeight", 175);
+     this._progressListener = null;
+@@ -50,14 +56,18 @@ class VerticalTabsUI {
+     // Clean up progress listener to prevent memory leak
+     if (this._win?.gBrowser && this._progressListener) {
+       this._win.gBrowser.removeTabsProgressListener(this._progressListener);
+       this._progressListener = null;
+     }
+     if (this._prefObserver) {
+       Services.prefs.removeObserver("stgr.verticalTabs.width", this._prefObserver);
+       this._prefObserver = null;
+     }
++    this._searchQuery = "";
++    this._searchResultIndex = -1;
++    this._searchVisibleResults = [];
+     if (this._panel) this.removePanel();
+     this._win = null;
+     this._controller = null;
+   }
+
+   // -----------------------------------------------------------------------
+@@ -67,19 +77,67 @@ class VerticalTabsUI {
+   _createHeader(doc) {
+     const header = doc.createElement("vbox");
+     header.setAttribute("class", "stgr-vertical-tabs-header");
+
++    // Search container with icon and clear button
++    const searchContainer = doc.createElement("hbox");
++    searchContainer.setAttribute("class", "stgr-vertical-tabs-search-container");
++
++    // Search icon (magnifying glass)
++    const searchIcon = doc.createElement("image");
++    searchIcon.setAttribute("class", "stgr-vertical-tabs-search-icon");
++    searchIcon.setAttribute("src",
++      "chrome://global/skin/icons/search.svg");
++    searchContainer.appendChild(searchIcon);
++
++    // Search input
+     const searchBox = doc.createElement("input");
+     searchBox.setAttribute("type", "text");
+     searchBox.setAttribute("class", "stgr-vertical-tabs-search");
+     searchBox.setAttribute("placeholder", "Search tabs...");
+     searchBox.setAttribute("aria-label", "Search tabs");
+-    header.appendChild(searchBox);
++    searchBox.setAttribute("autocomplete", "off");
++    searchContainer.appendChild(searchBox);
++
++    // Clear button (hidden by default, shown when input has text)
++    const clearBtn = doc.createElement("toolbarbutton");
++    clearBtn.setAttribute("class", "stgr-vertical-tabs-search-clear");
++    clearBtn.setAttribute("hidden", "true");
++    clearBtn.setAttribute("tooltiptext", "Clear search");
++    clearBtn.addEventListener("command", (e) => {
++      e.stopPropagation();
++      searchBox.value = "";
++      this._filterTabs("");
++      searchBox.focus();
++    });
++    searchContainer.appendChild(clearBtn);
++
++    // Result count label
++    const countLabel = doc.createElement("label");
++    countLabel.setAttribute("class", "stgr-vertical-tabs-search-count");
++    countLabel.setAttribute("hidden", "true");
++    searchContainer.appendChild(countLabel);
++
++    header.appendChild(searchContainer);
+     return header;
+   }
+
++  // -----------------------------------------------------------------------
++  // SEARCH: QUICK SWITCH (Ctrl+P)
++  // -----------------------------------------------------------------------
++
++  /**
++   * Focus the search box. Called from keyboard shortcut handler.
++   */
++  _focusSearch() {
++    const searchBox = this._panel?.querySelector(".stgr-vertical-tabs-search");
++    if (searchBox) {
++      searchBox.focus();
++      searchBox.select();
++    }
++  }
++
+   // -----------------------------------------------------------------------
+   // TAB RENDERING
+   // -----------------------------------------------------------------------
+
+@@ -434,6 +492,66 @@ class VerticalTabsUI {
+     this._tabItems.set(tab, item);
+   }
+
++  // -----------------------------------------------------------------------
++  // SEARCH: ENHANCED FILTERING
++  // -----------------------------------------------------------------------
++
++  /**
++   * Check if a string matches a fuzzy query.
++   * E.g., fuzzyMatch("gthb", "GitHub") returns true.
++   * Characters in the query must appear in order in the target,
++   * but not necessarily contiguously.
++   */
++  _fuzzyMatch(query, target) {
++    const q = query.toLowerCase();
++    const t = target.toLowerCase();
++    let qi = 0;
++    for (let ti = 0; ti < t.length && qi < q.length; ti++) {
++      if (t[ti] === q[qi]) qi++;
++    }
++    return qi === q.length;
++  }
++
++  /**
++   * Get the URL string for a tab (for URL search).
++   */
++  _getTabURL(tab) {
++    try {
++      return tab.linkedBrowser?.currentURI?.spec || "";
++    } catch (e) {
++      return "";
++    }
++  }
++
++  /**
++   * Check if a tab matches a search query.
++   */
++  _tabMatchesQuery(tab, query) {
++    if (!query) return true;
++
++    // Title search
++    if (this._fuzzyMatch(query, tab.label)) return true;
++
++    // URL search (if enabled)
++    if (this._searchUrls) {
++      const url = this._getTabURL(tab);
++      if (url && this._fuzzyMatch(query, url)) return true;
++    }
++
++    // Domain search (if query matches part of the hostname)
++    if (this._searchUrls) {
++      try {
++        const url = this._getTabURL(tab);
++        if (url) {
++          const host = new URL(url).hostname;
++          if (host && host.toLowerCase().includes(query.toLowerCase())) {
++            return true;
++          }
++        }
++      } catch (e) {
++        // Invalid URL, skip
++      }
++    }
++
++    return false;
++  }
++
++  /**
++   * Build highlight spans around matched characters in a label string.
++   * Returns an array of {text, highlighted} segments.
++   */
++  _getHighlightSegments(query, label) {
++    if (!query || !this._searchFuzzy) {
++      return [{ text: label, highlighted: false }];
++    }
++
++    const q = query.toLowerCase();
++    const l = label.toLowerCase();
++    const segments = [];
++    let qi = 0;
++    let lastEnd = 0;
++
++    for (let li = 0; li < l.length && qi < q.length; li++) {
++      if (l[li] === q[qi]) {
++        // Non-highlighted text before this match
++        if (li > lastEnd) {
++          segments.push({
++            text: label.slice(lastEnd, li),
++            highlighted: false,
++          });
++        }
++        // Highlighted match character
++        segments.push({
++          text: label[li],
++          highlighted: true,
++        });
++        lastEnd = li + 1;
++        qi++;
++      }
++    }
++
++    // Remaining text after last match
++    if (lastEnd < label.length) {
++      segments.push({
++        text: label.slice(lastEnd),
++        highlighted: false,
++      });
++    }
++
++    return segments;
++  }
++
++  /**
++   * Apply search highlight to a tab item's label element.
++   */
++  _applySearchHighlight(item, query, tab) {
++    const label = item.querySelector(".stgr-vertical-tab-label");
++    if (!label) return;
++
++    if (!query || !this._searchFuzzy) {
++      // No highlight needed, restore plain text
++      if (label._originalText !== undefined) {
++        label.textContent = label._originalText;
++        label._originalText = undefined;
++      }
++      return;
++    }
++
++    // Store original text on first highlight
++    if (label._originalText === undefined) {
++      label._originalText = label.textContent;
++    }
++
++    const segments = this._getHighlightSegments(query, tab.label);
++    // Clear and rebuild with highlight spans
++    label.textContent = "";
++    for (const seg of segments) {
++      if (seg.highlighted) {
++        const span = label.ownerDocument.createElementNS(
++          "http://www.w3.org/1999/xhtml", "span");
++        span.setAttribute("class", "stgr-vertical-tab-search-highlight");
++        span.textContent = seg.text;
++        label.appendChild(span);
++      } else {
++        label.appendChild(label.ownerDocument.createTextNode(seg.text));
++      }
++    }
++  }
++
++  _filterTabs(query) {
+     const q = query.toLowerCase().trim();
++    this._searchQuery = q;
++    this._searchVisibleResults = [];
++    this._searchResultIndex = -1;
++
++    // Update search UI
++    const header = this._panel?.querySelector(".stgr-vertical-tabs-header");
++    if (header) header.toggleAttribute("filter-active", !!q);
++
++    const clearBtn = this._panel?.querySelector(".stgr-vertical-tabs-search-clear");
++    if (clearBtn) clearBtn.toggleAttribute("hidden", !q);
++
+     for (const [, item] of this._tabItems) {
+-      const tab = [...this._tabItems].find(([t]) => t === item)?.[0] ||
+-                  [...this._tabItems.keys()].find(
+-                    k => this._tabItems.get(k) === item);
+-      if (tab) {
+-        const match = !q || tab.label.toLowerCase().includes(q);
+-        item.toggleAttribute("filter-hidden", !match);
++      // Find the tab key from the map value
++      const tab = [...this._tabItems.keys()].find(
++        k => this._tabItems.get(k) === item);
++      if (!tab) continue;
++
++      const match = this._tabMatchesQuery(tab, q);
++      item.toggleAttribute("filter-hidden", !match);
++
++      // Apply search highlighting
++      this._applySearchHighlight(item, q, tab);
++
++      if (match) {
++        this._searchVisibleResults.push(item);
+       }
+     }
++
++    // Update result count
++    this._updateSearchCount();
++  }
++
++  /**
++   * Update the search result count label.
++   */
++  _updateSearchCount() {
++    const countLabel = this._panel?.querySelector(
++      ".stgr-vertical-tabs-search-count");
++    if (!countLabel) return;
++
++    const total = this._searchVisibleResults.length;
++    const allTabs = this._tabItems.size;
++
++    if (this._searchQuery && total < allTabs) {
++      countLabel.removeAttribute("hidden");
++      countLabel.textContent = `${total} of ${allTabs} tabs`;
++    } else {
++      countLabel.setAttribute("hidden", "true");
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // SEARCH: KEYBOARD NAVIGATION
++  // -----------------------------------------------------------------------
++
++  /**
++   * Handle keyboard events on the search box.
++   * Up/Down: navigate through visible results.
++   * Enter: select the currently focused result.
++   * Escape: clear search.
++   */
++  _onSearchKeydown(e) {
++    if (e.key === "ArrowDown") {
++      e.preventDefault();
++      this._navigateSearchResults(1);
++    } else if (e.key === "ArrowUp") {
++      e.preventDefault();
++      this._navigateSearchResults(-1);
++    } else if (e.key === "Enter") {
++      e.preventDefault();
++      this._activateSearchResult();
++    } else if (e.key === "Escape") {
++      const searchBox = e.target;
++      if (searchBox.value) {
++        // If there's text, clear it first
++        searchBox.value = "";
++        this._filterTabs("");
++      } else {
++        // If already empty, blur the search box
++        searchBox.blur();
++      }
++    }
++  }
++
++  /**
++   * Navigate through search results by delta (+1 = down, -1 = up).
++   */
++  _navigateSearchResults(delta) {
++    const results = this._searchVisibleResults;
++    if (!results.length) return;
++
++    // Remove focus from current item
++    if (this._searchResultIndex >= 0 && this._searchResultIndex < results.length) {
++      results[this._searchResultIndex].removeAttribute("search-focused");
++    }
++
++    this._searchResultIndex += delta;
++
++    // Wrap around
++    if (this._searchResultIndex >= results.length) this._searchResultIndex = 0;
++    if (this._searchResultIndex < 0) this._searchResultIndex = results.length - 1;
++
++    // Focus the new item
++    const item = results[this._searchResultIndex];
++    item.setAttribute("search-focused", "true");
++    item.scrollIntoView({ block: "nearest", behavior: "smooth" });
++  }
++
++  /**
++   * Activate (select) the currently focused search result.
++   */
++  _activateSearchResult() {
++    const results = this._searchVisibleResults;
++    if (this._searchResultIndex < 0 || this._searchResultIndex >= results.length) {
++      return;
++    }
++    const item = results[this._searchResultIndex];
++    // Find the tab key from the map value
++    for (const [tab, tabItem] of this._tabItems) {
++      if (tabItem === item) {
++        this._win.gBrowser.selectedTab = tab;
++        // Blur the search box to return focus to the browser
++        const searchBox = this._panel?.querySelector(".stgr-vertical-tabs-search");
++        if (searchBox) searchBox.blur();
++        break;
++      }
++    }
+   }
+
+   // -----------------------------------------------------------------------
+   // TAB RENDERING (patch: sync _originalText cache on label update)
+   // -----------------------------------------------------------------------
+
+   _updateTabItem(tab, changed) {
+     const item = this._tabItems.get(tab);
+     if (!item) return;
+ 
+     if (changed.includes("label")) {
+       const lbl = item.querySelector(".stgr-vertical-tab-label");
+-      if (lbl) lbl.textContent = tab.label;
++      if (lbl) {
++        lbl.textContent = tab.label;
++        // Keep cached original text in sync for search highlight restoration
++        if (this._searchQuery) {
++          lbl._originalText = tab.label;
++          this._applySearchHighlight(item, this._searchQuery, tab);
++        }
++      }
+     }
+     if (changed.includes("image")) {
+       const fav = item.querySelector(".stgr-vertical-tab-favicon");
+       if (fav) fav.setAttribute("src",
+         tab.getAttribute("image") || "chrome://global/skin/icons/defaultFavicon.svg");
+     }
+     if (changed.includes("busy")) {
+       const spin = item.querySelector(".stgr-vertical-tab-spinner");
+       if (spin) spin.toggleAttribute("hidden", !tab.hasAttribute("busy"));
+       item.toggleAttribute("busy", tab.hasAttribute("busy"));
+     }
+     if (changed.includes("soundplaying")) {
+       item.toggleAttribute("soundplaying", tab.hasAttribute("soundplaying"));
+       this._syncMuteButton(tab, item);
+     }
+     if (changed.includes("muted")) {
+       item.toggleAttribute("muted", tab.hasAttribute("muted"));
+       this._syncMuteButton(tab, item);
+     }
+     if (changed.includes("data-identity-color")) {
+       const existing = item.querySelector(".stgr-vertical-tab-container-indicator");
+       const color = tab.getAttribute("data-identity-color");
+       if (color) {
+         if (existing) existing.style.backgroundColor = color;
+         else {
+           const doc = this._win.document;
+           const indicator = doc.createElement("hbox");
+           indicator.setAttribute("class", "stgr-vertical-tab-container-indicator");
+           indicator.style.backgroundColor = color;
+           item.insertBefore(indicator, item.firstChild);
+         }
+       } else if (existing) {
+         existing.remove();
+       }
+     }
+     // stgrGroupId attribute change
+     if (changed.includes("stgrGroupId") || changed.includes("group")) {
+       const gid = this._groups?.getGroupForTab(tab);
+       if (gid) { item.setAttribute("group", gid); }
+       else { item.removeAttribute("group"); }
+     }
+   }
+
+   // -----------------------------------------------------------------------
+   // TOGGLE BUTTON
+   // -----------------------------------------------------------------------
+
++  // -----------------------------------------------------------------------
+   // PANEL EVENTS
+   // -----------------------------------------------------------------------
+
+@@ -968,20 +1210,53 @@ class VerticalTabsUI {
+   _setupPanelEvents() {
+     if (!this._panel) return;
+     const doc = this._win.document;
+
++    // Debounced search input handler
++    let searchTimer = null;
++
+     this._panel.addEventListener("keydown", (e) => {
+-      if (e.key === "Escape") {
+-        const search = this._panel.querySelector(".stgr-vertical-tabs-search");
+-        if (search && doc.activeElement === search) {
+-          search.blur();
+-          search.value = "";
+-          this._filterTabs("");
+-        }
++      // Ctrl+P / Cmd+P: focus search
++      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
++        e.preventDefault();
++        this._focusSearch();
++      }
++      // Ctrl+Shift+F: focus search (alternative)
++      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "F") {
++        e.preventDefault();
++        this._focusSearch();
+       }
+     });
+
+     const searchBox = this._panel.querySelector(".stgr-vertical-tabs-search");
+     if (searchBox) {
+-      searchBox.addEventListener("input", (e) => this._filterTabs(e.target.value));
++      // Keyboard navigation on search box
++      searchBox.addEventListener("keydown", (e) => this._onSearchKeydown(e));
++
++      // Debounced search input
++      searchBox.addEventListener("input", (e) => {
++        if (searchTimer) this._win.clearTimeout(searchTimer);
++        searchTimer = this._win.setTimeout(() => {
++          this._filterTabs(e.target.value);
++          searchTimer = null;
++        }, 80);
++      });
++
++      // Focus/blur events for the active state
++      searchBox.addEventListener("focus", () => {
++        const container = searchBox.closest(".stgr-vertical-tabs-search-container");
++        if (container) container.setAttribute("focused", "true");
++      });
++
++      searchBox.addEventListener("blur", () => {
++        const container = searchBox.closest(".stgr-vertical-tabs-search-container");
++        if (container) container.removeAttribute("focused");
++        // Clear keyboard navigation state when search loses focus
++        this._clearSearchFocus();
++      });
++    }
++
++    // Click-outside to clear search focus
++    this._panel.addEventListener("click", (e) => {
++      if (!e.target.closest(".stgr-vertical-tabs-search-container")) {
++        this._clearSearchFocus();
++      }
+     });
+
+     this._panel.addEventListener("drop", (e) => {
+@@ -1007,6 +1272,17 @@ class VerticalTabsUI {
+     Services.prefs.addObserver("stgr.verticalTabs.width", this._prefObserver);
+   }
+
++  /**
++   * Clear all search keyboard focus states.
++   */
++  _clearSearchFocus() {
++    for (const [, item] of this._tabItems) {
++      item.removeAttribute("search-focused");
++    }
++    this._searchResultIndex = -1;
++  }
++
+   _getTargetTabFromEvent(e) {
+     let target = e.target;
+     while (target && target !== this._panel) {
+
+diff --git a/browser/components/verticaltabs/content/vertical-tabs.css b/browser/components/verticaltabs/content/vertical-tabs.css
+index 000000000000..000000000000
+--- a/browser/components/verticaltabs/content/vertical-tabs.css
++++ b/browser/components/verticaltabs/content/vertical-tabs.css
+@@ -491,3 +491,151 @@
+ .stgr-vertical-tabs-context menuseparator {
+   border-block-start: 1px solid var(--stgr-border, #2A2A3E);
+   margin: 4px 8px;
+ }
++
++/* =========================================================================
++   STGR Browser: Enhanced Tab Search
++   =========================================================================
++   Search icon, fuzzy highlighting, keyboard navigation, result count badge.
++   ========================================================================= */
++
++/* --- SEARCH CONTAINER ------------------------------------------------- */
++.stgr-vertical-tabs-search-container {
++  align-items: center;
++  display: flex;
++  flex-direction: row;
++  gap: 4px;
++  position: relative;
++}
++
++/* --- SEARCH ICON ------------------------------------------------------ */
++.stgr-vertical-tabs-search-icon {
++  flex-shrink: 0;
++  height: 12px;
++  margin-inline-end: -20px;
++  opacity: 0.4;
++  pointer-events: none;
++  position: relative;
++  width: 12px;
++  z-index: 1;
++}
++
++/* --- SEARCH INPUT ----------------------------------------------------- */
++.stgr-vertical-tabs-search {
++  -moz-appearance: none;
++  appearance: none;
++  background-color: var(--stgr-bg-surface-alt, #1E1E1E);
++  border: 1px solid var(--stgr-border, #2A2A2A);
++  border-radius: 6px;
++  color: var(--stgr-text-primary, #E8E8E8);
++  flex: 1;
++  font-size: 12px;
++  outline: none;
++  padding: 6px 10px 6px 24px;
++  transition: border-color 0.15s ease, background-color 0.15s ease;
++  width: 100%;
++  box-sizing: border-box;
++}
++
++.stgr-vertical-tabs-search:focus {
++  border-color: var(--stgr-accent-primary, #C41E3A);
++  background-color: var(--stgr-bg-surface, #141414);
++}
++
++.stgr-vertical-tabs-search::placeholder {
++  color: var(--stgr-text-secondary, #909090);
++  opacity: 1;
++}
++
++/* Filter-active state on the header */
++.stgr-vertical-tabs-header[filter-active="true"] {
++  border-block-end-color: var(--stgr-accent-primary, #C41E3A);
++}
++
++/* --- CLEAR BUTTON ----------------------------------------------------- */
++.stgr-vertical-tabs-search-clear {
++  -moz-appearance: none;
++  appearance: none;
++  background: transparent;
++  border: none;
++  border-radius: 3px;
++  cursor: default;
++  flex-shrink: 0;
++  height: 14px;
++  list-style-image: url("chrome://global/skin/icons/close.svg");
++  margin-inline-start: -24px;
++  opacity: 0;
++  padding: 0;
++  position: relative;
++  transition: opacity 0.12s ease;
++  width: 14px;
++  z-index: 1;
++}
++
++.stgr-vertical-tabs-search-clear:not([hidden]) {
++  opacity: 0.4;
++}
++
++.stgr-vertical-tabs-search-clear:hover {
++  opacity: 0.8 !important;
++}
++
++/* --- SEARCH COUNT BADGE ----------------------------------------------- */
++.stgr-vertical-tabs-search-count {
++  color: var(--stgr-text-secondary, #909090);
++  flex-shrink: 0;
++  font-size: 10px;
++  margin-inline-start: auto;
++  padding: 2px 6px;
++  user-select: none;
++  white-space: nowrap;
++}
++
++/* --- SEARCH HIGHLIGHT ------------------------------------------------- */
++/* Matched characters in tab labels during search */
++.stgr-vertical-tab-search-highlight {
++  text-decoration: underline;
++  text-decoration-color: var(--stgr-accent-primary, #C41E3A);
++  text-underline-offset: 2px;
++  text-decoration-thickness: 1.5px;
++}
++
++/* --- KEYBOARD NAVIGATION FOCUS --------------------------------------- */
++.stgr-vertical-tab[search-focused="true"] {
++  background-color: var(--stgr-bg-surface-alt, #1E1E1E);
++  outline: 1px solid var(--stgr-accent-primary, #C41E3A);
++  outline-offset: -1px;
++}
++
++.stgr-vertical-tab[search-focused="true"][selected="true"] {
++  outline: 2px solid var(--stgr-accent-primary, #C41E3A);
++  outline-offset: -2px;
++}
++
++/* --- FOCUSED CONTAINER STATE ------------------------------------------ */
++.stgr-vertical-tabs-search-container[focused="true"] .stgr-vertical-tabs-search {
++  border-color: var(--stgr-accent-primary, #C41E3A);
++}
++
++.stgr-vertical-tabs-search-container[focused="true"] .stgr-vertical-tabs-search-icon {
++  opacity: 0.7;
++}
++
++/* --- ANIMATED FILTER ENTRY ------------------------------------------- */
++.stgr-vertical-tab[filter-hidden="true"] {
++  display: none;
++}
++
++.stgr-vertical-tabs-header[filter-active="true"] .stgr-vertical-tab:not([filter-hidden]) {
++  animation: stgrSearchReveal 0.15s ease-out both;
++}
++
++@keyframes stgrSearchReveal {
++  from {
++    opacity: 0;
++    transform: translateX(-8px);
++  }
++  to {
++    opacity: 1;
++    transform: translateX(0);
++  }
++}

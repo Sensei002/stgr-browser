@@ -1,0 +1,340 @@
+From: STGR Browser Team <dev@stgr-browser.dev>
+Date: Tue, 7 Jul 2026 00:00:00 +0000
+Subject: STGR Browser preferences pane controller and localization
+
+Adds the STGR preferences pane controller (stgr.js), localization (stgr.ftl),
+and build registration (moz.build). Also updates the vertical tabs settings
+button to navigate to the correct pane.
+
+Integration into preferences.xhtml and preferences.js is a manual step
+that must be done after cloning the Firefox source (see docs/STGR_PREFERENCES.md).
+
+diff --git a/browser/components/preferences/in-content/stgr.js b/browser/components/preferences/in-content/stgr.js
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/preferences/in-content/stgr.js
+@@ -0,0 +1,155 @@
++/* -*- Mode: JS; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++// STGR Browser: Preferences pane controller
++
++var STGRPreferences = {
++  _observers: [],
++
++  init() {
++    this._bindVerticalTabs();
++    this._bindTabGroups();
++    this._bindTabPreview();
++    this._bindGamingMode();
++    this._initAbout();
++    this._setupShutdown();
++  },
++
++  // Vertical Tabs
++
++  _bindVerticalTabs() {
++    this._bindCheckbox("stgrVerticalTabsEnabled", "stgr.verticalTabs.enabled");
++    this._bindSlider("stgrVerticalTabsWidth", "stgr.verticalTabs.width",
++                     "stgrVerticalTabsWidthValue", "px");
++    this._bindCheckbox("stgrVerticalTabsAutoHide", "stgr.verticalTabs.autoHide");
++    this._bindCheckbox("stgrVerticalTabsShowPreview", "stgr.verticalTabs.showPreview");
++    this._bindCheckbox("stgrVerticalTabsSearchEnabled", "stgr.verticalTabs.searchEnabled");
++    this._bindCheckbox("stgrVerticalTabsSearchFuzzy", "stgr.verticalTabs.searchFuzzy");
++    this._bindCheckbox("stgrVerticalTabsSearchUrls", "stgr.verticalTabs.searchUrls");
++    this._bindCheckbox("stgrVerticalTabsAnimations", "stgr.verticalTabs.animations");
++  },
++
++  // Tab Groups
++
++  _bindTabGroups() {
++    this._bindCheckbox("stgrTabGroupsEnabled", "stgr.tabGroups.enabled");
++    this._bindCheckbox("stgrTabGroupsShowColorDot", "stgr.tabGroups.showColorDot");
++    this._bindCheckbox("stgrTabGroupsCollapseOnStartup", "stgr.tabGroups.collapseOnStartup");
++  },
++
++  // Tab Preview
++
++  _bindTabPreview() {
++    this._bindSlider("stgrPreviewWidth", "stgr.verticalTabs.previewWidth",
++                     "stgrPreviewWidthValue", "px");
++    this._bindSlider("stgrPreviewHeight", "stgr.verticalTabs.previewHeight",
++                     "stgrPreviewHeightValue", "px");
++    this._bindSlider("stgrPreviewQuality", "stgr.verticalTabs.previewQuality",
++                     "stgrPreviewQualityValue", "");
++  },
++
++  // Gaming Mode
++
++  _bindGamingMode() {
++    this._bindCheckbox("stgrGamingModeEnabled", "stgr.gamingMode.enabled");
++  },
++
++  // About
++
++  _initAbout() {
++    const appInfo = Services.appinfo;
++    const verEl = document.getElementById("stgrAboutVersion");
++    if (verEl) verEl.textContent = appInfo.version || "1.0.0";
++    const buildEl = document.getElementById("stgrAboutBuild");
++    if (buildEl) buildEl.textContent = appInfo.appBuildID || "20260701";
++    const platEl = document.getElementById("stgrAboutPlatform");
++    if (platEl) platEl.textContent = appInfo.OS || "Unknown";
++  },
++
++  // Binding Helpers
++
++  _bindCheckbox(elementId, prefName) {
++    const el = document.getElementById(elementId);
++    if (!el) return;
++    const pref = Services.prefs.getBoolPref(prefName, false);
++    el.checked = pref;
++    el.addEventListener("command", () => {
++      Services.prefs.setBoolPref(prefName, el.checked);
++    });
++    const obs = (subject, topic, data) => {
++      if (data === prefName) {
++        el.checked = Services.prefs.getBoolPref(prefName, false);
++      }
++    };
++    Services.prefs.addObserver(prefName, obs);
++    this._observers.push({ pref: prefName, observer: obs });
++  },
++
++  _bindSlider(elementId, prefName, valueLabelId, suffix) {
++    const el = document.getElementById(elementId);
++    const label = document.getElementById(valueLabelId);
++    if (!el) return;
++    const initial = Services.prefs.getIntPref(prefName, 260);
++    el.value = initial;
++    if (label) label.textContent = `${initial}${suffix}`;
++    el.addEventListener("input", () => {
++      const val = parseInt(el.value, 10);
++      Services.prefs.setIntPref(prefName, val);
++      if (label) label.textContent = `${val}${suffix}`;
++    });
++    const obs = (subject, topic, data) => {
++      if (data === prefName) {
++        const val = Services.prefs.getIntPref(prefName, 260);
++        el.value = val;
++        if (label) label.textContent = `${val}${suffix}`;
++      }
++    };
++    Services.prefs.addObserver(prefName, obs);
++    this._observers.push({ pref: prefName, observer: obs });
++  },
++
++  // Lifecycle
++
++  _setupShutdown() {
++    window.addEventListener("unload", () => this.shutdown());
++  },
++
++  shutdown() {
++    for (const { pref, observer } of this._observers) {
++      Services.prefs.removeObserver(pref, observer);
++    }
++    this._observers = [];
++  },
++};
+diff --git a/browser/components/preferences/in-content/moz.build b/browser/components/preferences/in-content/moz.build
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/components/preferences/in-content/moz.build
+@@ -0,0 +1,9 @@
++# vim: set filetype=python:
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++# STGR Browser: Preferences pane files
++
++FINAL_TARGET_SCRIPTS += [
++    "stgr.js",
++]
+diff --git a/browser/locales/en-US/browser/preferences/stgr.ftl b/browser/locales/en-US/browser/preferences/stgr.ftl
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/browser/locales/en-US/browser/preferences/stgr.ftl
+@@ -0,0 +1,67 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++# STGR Browser - Preferences Pane Localization
++
++## Category
++category-stgr =
++  .label = STGR Browser
++  .tooltiptext = STGR Browser settings
++
++## Header
++stgr-pane-header = STGR Settings
++
++## Vertical Tabs
++stgr-vertical-tabs-header =
++  .label = Vertical Tabs
++stgr-vertical-tabs-enabled =
++  .label = Enable vertical tab layout
++stgr-vertical-tabs-width =
++  .label = Sidebar width
++stgr-vertical-tabs-auto-hide =
++  .label = Auto-hide sidebar
++stgr-vertical-tabs-show-preview =
++  .label = Show tab preview on hover
++stgr-vertical-tabs-search-enabled =
++  .label = Enable tab search
++stgr-vertical-tabs-search-fuzzy =
++  .label = Fuzzy search
++stgr-vertical-tabs-search-urls =
++  .label = Search page URLs
++stgr-vertical-tabs-animations =
++  .label = Enable animations
++
++## Tab Groups
++stgr-tab-groups-header =
++  .label = Tab Groups
++stgr-tab-groups-enabled =
++  .label = Enable tab groups
++stgr-tab-groups-show-color-dot =
++  .label = Show color indicator
++stgr-tab-groups-collapse-on-startup =
++  .label = Collapse on startup
++
++## Tab Preview
++stgr-tab-preview-header =
++  .label = Tab Preview Thumbnail
++stgr-tab-preview-width =
++  .label = Thumbnail width
++stgr-tab-preview-height =
++  .label = Thumbnail height
++stgr-tab-preview-quality =
++  .label = JPEG quality
++
++## Gaming Mode
++stgr-gaming-mode-header =
++  .label = Gaming Mode
++stgr-gaming-mode-enabled =
++  .label = Enable Gaming Mode
++
++## About
++stgr-about-header =
++  .label = About STGR Browser
++stgr-about-version =
++  .label = Version
++stgr-about-build =
++  .label = Build ID
++stgr-about-platform =
++  .label = Platform
+diff --git a/browser/components/preferences/in-content/preferences.xhtml b/browser/components/preferences/in-content/preferences.xhtml
+--- a/browser/components/preferences/in-content/preferences.xhtml
++++ b/browser/components/preferences/in-content/preferences.xhtml
+@@ -X,Y +X,Y @@
++    <!-- STGR Browser pane -->
++    <html:link rel="localization" href="browser/preferences/stgr.ftl"/>
++
++    <vbox id="category-stgr" class="category"
++          data-category="paneSTGR"
++          data-l10n-id="category-stgr">
++    </vbox>
+@@ -X,Y +X,Y @@
++    <!-- STGR Browser -->
++    <html:template id="paneSTGR" xmlns="http://www.w3.org/1999/xhtml">
++      <html:h1 data-l10n-id="stgr-pane-header"/>
++
++      <xul:groupbox id="stgrVerticalTabsGroup" data-category="paneSTGR">
++        <xul:caption><xul:label data-l10n-id="stgr-vertical-tabs-header"/></xul:caption>
++        <xul:vbox>
++          <xul:checkbox id="stgrVerticalTabsEnabled" data-l10n-id="stgr-vertical-tabs-enabled"/>
++          <xul:hbox align="center">
++            <xul:label data-l10n-id="stgr-vertical-tabs-width" control="stgrVerticalTabsWidth" flex="1"/>
++            <html:input type="range" id="stgrVerticalTabsWidth" min="200" max="400" step="10"/>
++            <xul:label id="stgrVerticalTabsWidthValue"/>
++          </xul:hbox>
++          <xul:checkbox id="stgrVerticalTabsAutoHide" data-l10n-id="stgr-vertical-tabs-auto-hide"/>
++          <xul:checkbox id="stgrVerticalTabsShowPreview" data-l10n-id="stgr-vertical-tabs-show-preview"/>
++          <xul:checkbox id="stgrVerticalTabsSearchEnabled" data-l10n-id="stgr-vertical-tabs-search-enabled"/>
++          <xul:checkbox id="stgrVerticalTabsSearchFuzzy" data-l10n-id="stgr-vertical-tabs-search-fuzzy"/>
++          <xul:checkbox id="stgrVerticalTabsSearchUrls" data-l10n-id="stgr-vertical-tabs-search-urls"/>
++          <xul:checkbox id="stgrVerticalTabsAnimations" data-l10n-id="stgr-vertical-tabs-animations"/>
++        </xul:vbox>
++      </xul:groupbox>
++
++      <xul:groupbox id="stgrTabGroupsGroup" data-category="paneSTGR">
++        <xul:caption><xul:label data-l10n-id="stgr-tab-groups-header"/></xul:caption>
++        <xul:vbox>
++          <xul:checkbox id="stgrTabGroupsEnabled" data-l10n-id="stgr-tab-groups-enabled"/>
++          <xul:checkbox id="stgrTabGroupsShowColorDot" data-l10n-id="stgr-tab-groups-show-color-dot"/>
++          <xul:checkbox id="stgrTabGroupsCollapseOnStartup" data-l10n-id="stgr-tab-groups-collapse-on-startup"/>
++        </xul:vbox>
++      </xul:groupbox>
++
++      <xul:groupbox id="stgrPreviewGroup" data-category="paneSTGR">
++        <xul:caption><xul:label data-l10n-id="stgr-tab-preview-header"/></xul:caption>
++        <xul:vbox>
++          <xul:hbox align="center">
++            <xul:label data-l10n-id="stgr-tab-preview-width" control="stgrPreviewWidth" flex="1"/>
++            <html:input type="range" id="stgrPreviewWidth" min="200" max="500" step="10"/>
++            <xul:label id="stgrPreviewWidthValue"/>
++          </xul:hbox>
++          <xul:hbox align="center">
++            <xul:label data-l10n-id="stgr-tab-preview-height" control="stgrPreviewHeight" flex="1"/>
++            <html:input type="range" id="stgrPreviewHeight" min="100" max="400" step="10"/>
++            <xul:label id="stgrPreviewHeightValue"/>
++          </xul:hbox>
++          <xul:hbox align="center">
++            <xul:label data-l10n-id="stgr-tab-preview-quality" control="stgrPreviewQuality" flex="1"/>
++            <html:input type="range" id="stgrPreviewQuality" min="10" max="100" step="5"/>
++            <xul:label id="stgrPreviewQualityValue"/>
++          </xul:hbox>
++        </xul:vbox>
++      </xul:groupbox>
++
++      <xul:groupbox id="stgrGamingModeGroup" data-category="paneSTGR">
++        <xul:caption><xul:label data-l10n-id="stgr-gaming-mode-header"/></xul:caption>
++        <xul:vbox>
++          <xul:checkbox id="stgrGamingModeEnabled" data-l10n-id="stgr-gaming-mode-enabled"/>
++        </xul:vbox>
++      </xul:groupbox>
++
++      <xul:groupbox id="stgrAboutGroup" data-category="paneSTGR">
++        <xul:caption><xul:label data-l10n-id="stgr-about-header"/></xul:caption>
++        <xul:vbox>
++          <xul:hbox align="center">
++            <xul:label data-l10n-id="stgr-about-version"/>
++            <xul:label id="stgrAboutVersion"/>
++          </xul:hbox>
++          <xul:hbox align="center">
++            <xul:label data-l10n-id="stgr-about-build"/>
++            <xul:label id="stgrAboutBuild"/>
++          </xul:hbox>
++          <xul:hbox align="center">
++            <xul:label data-l10n-id="stgr-about-platform"/>
++            <xul:label id="stgrAboutPlatform"/>
++          </xul:hbox>
++        </xul:vbox>
++      </xul:groupbox>
++
++      <script src="chrome://browser/content/preferences/in-content/stgr.js"/>
++    </html:template>
+diff --git a/browser/components/preferences/in-content/preferences.js b/browser/components/preferences/in-content/preferences.js
+--- a/browser/components/preferences/in-content/preferences.js
++++ b/browser/components/preferences/in-content/preferences.js
+@@ -X,Y +X,Y @@
++    case "paneSTGR":
++      STGRPreferences.init();
++      break;
+@@ -X,Y +X,Y @@
++      STGRPreferences.shutdown();
++      break;
+diff --git a/browser/components/verticaltabs/VerticalTabsUI.jsm b/browser/components/verticaltabs/VerticalTabsUI.jsm
+--- a/browser/components/verticaltabs/VerticalTabsUI.jsm
++++ b/browser/components/verticaltabs/VerticalTabsUI.jsm
+@@ -X,Y +X,Y @@
+-      this._win.openPreferences("paneSTGRVerticalTabs");
++      this._win.openPreferences("paneSTGR");

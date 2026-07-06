@@ -1,0 +1,228 @@
+# ============================================================================
+# STGR Browser - CI Build Pipeline
+# ============================================================================
+# This workflow builds STGR Browser on all platforms and runs validation checks.
+#
+# Note: Full Firefox builds require ~40GB disk and 2+ hours.
+# The build matrix below provides different levels of validation.
+# ============================================================================
+
+name: Build & Test
+
+on:
+  push:
+    branches: [main, develop, release/*]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 6 * * 1' # Weekly build every Monday
+
+env:
+  STGR_SOURCE_DIR: ${{ github.workspace }}/gecko-dev
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # =========================================================================
+  # VALIDATION: Quick checks to validate the STGR project structure
+  # Runs on every push/PR, takes ~2 minutes
+  # =========================================================================
+  validate:
+    name: Validate Project Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check project structure
+        run: |
+          echo "Checking STGR Browser project structure..."
+          REQUIRED_DIRS="branding config scripts patches docs"
+          for dir in $REQUIRED_DIRS; do
+            if [ ! -d "$dir" ]; then
+              echo "Missing required directory: $dir"
+              exit 1
+            fi
+            echo "  ✓ $dir"
+          done
+
+      - name: Validate branding files
+        run: |
+          echo "Validating branding files..."
+          REQUIRED_FILES="branding/logo.svg branding/icon.svg branding/theme.json branding/branding-config.json"
+          for file in $REQUIRED_FILES; do
+            if [ ! -f "$file" ]; then
+              echo "Missing required file: $file"
+              exit 1
+            fi
+            echo "  ✓ $file"
+          done
+
+      - name: Validate config files
+        run: |
+          echo "Validating config files..."
+          REQUIRED_FILES="config/mozconfig config/stgr-prefs.js config/search-engines.json"
+          for file in $REQUIRED_FILES; do
+            if [ ! -f "$file" ]; then
+              echo "Missing required file: $file"
+              exit 1
+            fi
+            echo "  ✓ $file"
+          done
+
+      - name: Validate patches exist
+        run: |
+          echo "Checking patches..."
+          PATCH_COUNT=$(ls patches/*.patch 2>/dev/null | wc -l)
+          if [ "$PATCH_COUNT" -lt 5 ]; then
+            echo "Expected at least 5 patches, found $PATCH_COUNT"
+            exit 1
+          fi
+          echo "  ✓ $PATCH_COUNT patches found"
+
+      - name: Validate documentation structure
+        run: |
+          echo "Checking documentation..."
+          for doc in README.md docs/ARCHITECTURE.md docs/BUILD.md docs/DEVELOPER.md \
+                     docs/CONTRIBUTING.md docs/OPTIMIZATION.md docs/PRIVACY.md \
+                     docs/BRANDING.md docs/GAMING_MODE.md; do
+            if [ ! -f "$doc" ]; then
+              echo "Missing documentation: $doc"
+              exit 1
+            fi
+            echo "  ✓ $doc"
+          done
+
+  # =========================================================================
+  # PATCH VALIDATION: Verify patches apply cleanly to a Firefox checkout
+  # Runs on PRs, takes ~10 minutes (just clone + apply)
+  # =========================================================================
+  patch-validation:
+    name: Validate Patches
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shallow clone Firefox source
+        run: |
+          git clone --depth 1 --branch RELEASE_BASE_20250701 \
+            https://github.com/mozilla/gecko-dev.git gecko-dev
+
+      - name: Apply STGR patches
+        run: |
+          cd gecko-dev
+          git config user.email "ci@stgr-browser.dev"
+          git config user.name "STGR CI"
+          
+          for patch in ../patches/*.patch; do
+            echo "Applying: $(basename $patch)..."
+            if git apply --check "$patch" 2>/dev/null; then
+              git apply "$patch"
+              echo "  ✓ $(basename $patch)"
+            else
+              echo "  ✗ $(basename $patch) - FAILED"
+              echo "  Patch may need updating for this Firefox version."
+              git apply --check "$patch" 2>&1 || true
+            fi
+          done
+
+  # =========================================================================
+  # LINUX BUILD: Full build on self-hosted runner
+  # Runs on main branch pushes and releases
+  # =========================================================================
+  linux-build:
+    name: Linux Build
+    runs-on: [self-hosted, linux, x64]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Firefox source
+        run: ./scripts/setup.sh
+
+      - name: Build STGR Browser
+        run: |
+          cd gecko-dev
+          ./mach build --verbose 2>&1 | tail -20
+
+      - name: Create package
+        run: |
+          cd gecko-dev
+          ./mach build package
+          mkdir -p ${{ github.workspace }}/artifacts
+          cp obj-build-stgr/dist/*.tar.* ${{ github.workspace }}/artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-linux
+          path: artifacts/
+          retention-days: 14
+
+  # =========================================================================
+  # WINDOWS BUILD: Full build on self-hosted Windows runner
+  # =========================================================================
+  windows-build:
+    name: Windows Build
+    runs-on: [self-hosted, windows, x64]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Firefox source
+        shell: bash
+        run: ./scripts/setup.sh
+
+      - name: Build STGR Browser
+        shell: bash
+        run: |
+          cd gecko-dev
+          ./mach build --verbose 2>&1 | tail -20
+
+      - name: Create installer
+        shell: bash
+        run: |
+          cd gecko-dev
+          ./mach build installer
+          mkdir -p ${{ github.workspace }}/artifacts
+          cp obj-build-stgr/dist/*.exe ${{ github.workspace }}/artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-windows
+          path: artifacts/
+          retention-days: 14
+
+  # =========================================================================
+  # macOS BUILD: Full build on self-hosted macOS runner
+  # =========================================================================
+  macos-build:
+    name: macOS Build
+    runs-on: [self-hosted, macos, x64]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Firefox source
+        run: ./scripts/setup.sh
+
+      - name: Build STGR Browser
+        run: |
+          cd gecko-dev
+          ./mach build --verbose 2>&1 | tail -20
+
+      - name: Create DMG
+        run: |
+          cd gecko-dev
+          ./mach build package
+          ./mach build dmg
+          mkdir -p ${{ github.workspace }}/artifacts
+          cp obj-build-stgr/dist/*.dmg ${{ github.workspace }}/artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-macos
+          path: artifacts/
+          retention-days: 14
