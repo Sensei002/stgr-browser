@@ -51,7 +51,7 @@ STGR Browser is a fork of Mozilla Firefox that has been stripped of telemetry, t
 
 ```bash
 # 1. Clone this repository
-git clone https://github.com/steigerdojo/stgr-browser.git
+git clone https://github.com/Sensei002/stgr-browser.git
 cd stgr-browser
 
 # 2. Run setup (clones Firefox source, applies patches, installs dependencies)
