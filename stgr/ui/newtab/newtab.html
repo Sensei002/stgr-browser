@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!--
+  STGR Browser — New Tab page.
+  Lightweight, fully offline, no network requests, no telemetry, no ads.
+
+  Placeholders ({{...}}) are substituted at build/package time from
+  stgr/config/stgr-config.json by scripts/build_stgr.py.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>New Tab — STGR Browser</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <main class="stage">
+    <div class="glow" aria-hidden="true"></div>
+
+    <header class="brand">
+      <img class="brand-logo" src="../branding/stgr-logo.svg" alt="STGR"
+           width="110" height="93">
+      <p class="brand-name">STGR <span class="brand-dojou">道場</span></p>
+    </header>
+
+    <section class="clock">
+      <p class="clock-time" id="clock">--:--</p>
+      <p class="clock-date" id="date"></p>
+    </section>
+
+    <form class="search" id="search" action="{{SEARCH_URL}}" method="GET">
+      <input type="search" name="q" id="search-input"
+             placeholder="Search the web quietly…" autocomplete="off" spellcheck="false">
+      <button type="submit" aria-label="Search">→</button>
+    </form>
+
+    <section class="shortcuts" id="shortcuts" aria-label="Shortcuts"></section>
+
+    <footer class="foot">
+      <span>STGR Browser {{STGR_VERSION}} ·
+        <a class="foot-link" href="{{WEBSITE_URL}}" rel="noopener noreferrer">STEiGER Dojo</a></span>
+      <span class="foot-tag">fast · quiet · precise · premium</span>
+    </footer>
+  </main>
+  <script src="newtab.js"></script>
+</body>
+</html>

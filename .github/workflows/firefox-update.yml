@@ -1,0 +1,72 @@
+name: Firefox Update
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect newer Firefox Stable
+        id: detect
+        shell: bash
+        run: |
+          python scripts/update_firefox.py check > /tmp/ff-check.txt
+          cat /tmp/ff-check.txt
+          if grep -q "UPDATE AVAILABLE" /tmp/ff-check.txt; then
+            echo "update=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "update=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebase and open PR
+        if: steps.detect.outputs.update == 'yes'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "STGR Bot"
+          git config user.email "bot@steigerdojo.invalid"
+
+          OLD=$(python -c "import json;print(json.load(open('stgr/config/stgr-config.json'))['firefox']['upstream_version'])")
+          python scripts/update_firefox.py sync || exit 1
+
+          NEW=$(cd firefox && git describe --tags --abbrev=0 --match 'FIREFOX_*' | tr -d '\n')
+          BRANCH="update/firefox-${NEW}"
+          git checkout -b "$BRANCH"
+          python scripts/apply_patches.py apply || { echo "PATCH CONFLICT — manual rebase required"; exit 1; }
+          git add -A
+          git commit -m "chore: rebase onto Firefox ${NEW}" || true
+          git push origin "$BRANCH"
+
+          # Patch releases (same major.minor) are typically security updates.
+          SECURITY=""
+          if [[ "$OLD" == "${NEW%.*}"* && "$OLD" != "$NEW" ]]; then
+            SECURITY="**SECURITY UPDATE** — patch release. Prioritize review and release."
+          fi
+
+          gh pr create \
+            --base main --head "$BRANCH" \
+            --title "Rebase onto Firefox ${NEW}" \
+            --body "## Firefox update: $OLD -> ${NEW}
+
+$SECURITY
+
+- [ ] Build succeeds
+- [ ] Unit/smoke tests pass
+- [ ] Privacy tests pass
+- [ ] No unresolved patch conflicts
+- [ ] Benchmark sanity check
+
+> Automatically opened by firefox-update.yml. **Do not merge until CI is green.**" \
+            || true

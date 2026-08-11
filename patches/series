@@ -1,0 +1,7 @@
+# STGR patch series — applied in order by scripts/apply_patches.py
+patches/0001-stgr-branding.patch
+patches/0002-stgr-privacy-defaults.patch
+patches/0003-stgr-new-tab.patch
+patches/0004-stgr-gaming-mode.patch
+patches/0005-stgr-ui.patch
+patches/0006-stgr-update-system.patch

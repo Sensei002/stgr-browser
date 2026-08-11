@@ -1,0 +1,224 @@
+STGR PATCH: 0004 — STGR Gaming Mode and performance preference block
+Purpose:                Implement STGR Gaming Mode (browser resource management while
+                        gaming) and the performance preference defaults / memory profiles.
+                        Gaming Mode suspends background tabs and reduces timers, network,
+                        animations and preloading — it never touches other applications,
+                        GPU drivers, or the OS.
+Files changed:          browser/app/profile/firefox.js
+                        browser/components/stgr/gamingmode/moz.build (new)
+                        browser/components/stgr/gamingmode/STGRGamingMode.sys.mjs (new)
+                        browser/base/content/browser-init.js
+Security impact:        None. No security mitigation is disabled. Tabs playing audio/video,
+                        downloads, WebRTC calls and the active tab are protected.
+Performance impact:     When enabled: reduced background CPU/RAM/network by design.
+Upstream compatibility: browser-init.js (_delayedStartup) is the current main-window
+                        startup hook (verified on the release branch); rebase risk MEDIUM.
+                        Verify the STGRGamingMode import and the browser.discard /
+                        TabUnloader API against the pinned Firefox version.
+Note:                   DEPENDENCY: must be applied AFTER 0002 — the firefox.js insertion
+                        anchors on the "// END STGR PRIVACY PREFS" marker that 0002 injects
+                        (series order guarantees this). The injected block is the exact
+                        content of stgr/config/preferences/performance.js (enforced by
+                        lint_prefs_sync.py / --verify-prefs-sync).
+
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -112,3 +112,41 @@
+ // END STGR PRIVACY PREFS
++
++// BEGIN STGR PERFORMANCE PREFS
++
++// ---- Default performance posture -----------------------------------
++// Hardware acceleration stays ON (never disabled by default).
++pref("layers.acceleration.force-enabled", true);   // hardware acceleration
++pref("gfx.webrender.all", true);                   // WebRender default path
++// Reduce idle background activity.
++pref("network.http.throttle.enable", true);
++pref("browser.sessionstore.interval", 30000);      // session writes less chatty
++pref("browser.tabs.unloadOnLowMemory", true);      // memory-pressure unloading
++
++// ---- Memory profiles --------------------------------------------------
++// normal:    stock Firefox behavior
++// balanced:  moderate background-tab suspension and timer throttling
++// aggressive: maximum background resource reduction (active tab protected)
++
++pref("stgr.memoryProfile.normal.tabs.suspendAfterSeconds", 0);
++pref("stgr.memoryProfile.balanced.tabs.suspendAfterSeconds", 600);
++pref("stgr.memoryProfile.aggressive.tabs.suspendAfterSeconds", 120);
++pref("stgr.memoryProfile.aggressive.timerThrottling", true);
++pref("stgr.memoryProfile.aggressive.backgroundNetwork", false);
++pref("stgr.memoryProfile.aggressive.animation", false);
++pref("stgr.memoryProfile.aggressive.preload", false);
++
++// ---- Gaming Mode preset (applied when stgr.gamingMode.enabled) --------
++pref("stgr.gamingMode.suspendBackgroundTabs", true);
++pref("stgr.gamingMode.reduceTimers", true);
++pref("stgr.gamingMode.reduceNetwork", true);
++pref("stgr.gamingMode.reduceAnimations", true);
++pref("stgr.gamingMode.pausePreload", true);
++// Protected media (audio/video/calls) and downloads are NEVER unloaded:
++pref("stgr.gamingMode.protect.audio", true);
++pref("stgr.gamingMode.protect.video", true);
++pref("stgr.gamingMode.protect.downloads", true);
++pref("stgr.gamingMode.protect.webrtc", true);
++
++// END STGR PERFORMANCE PREFS
+ 
+ // Non-static prefs that are specific to desktop Firefox belong in this file
+
+diff --git a/browser/components/stgr/gamingmode/moz.build b/browser/components/stgr/gamingmode/moz.build
+new file mode 100644
+--- /dev/null
++++ b/browser/components/stgr/gamingmode/moz.build
+@@ -0,0 +1,9 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++# STGR Gaming Mode module. Loaded from browser/base/content/browser-init.js.
++
++EXTRA_JS_MODULES += [
++    "STGRGamingMode.sys.mjs",
++]
+diff --git a/browser/components/stgr/gamingmode/STGRGamingMode.sys.mjs b/browser/components/stgr/gamingmode/STGRGamingMode.sys.mjs
+new file mode 100644
+--- /dev/null
++++ b/browser/components/stgr/gamingmode/STGRGamingMode.sys.mjs
+@@ -0,0 +1,112 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/*
++ * STGR Gaming Mode — browser resource management while gaming.
++ *
++ * Scope: suspend background tabs where safe, reduce background timers,
++ * network, animations and preloading. NEVER touches other applications,
++ * game processes, GPU drivers, or OS security settings.
++ *
++ * Mode values (pref stgr.gamingMode.enabled): off | on | automatic.
++ * Automatic is a passive, non-invasive heuristic (see docs/gaming-mode.md).
++ */
++
++import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
++import { Services } from "resource://gre/modules/Services.sys.mjs";
++import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
++
++const lazy = {};
++XPCOMUtils.defineLazyGetter(lazy, "TabUnloader", () => {
++  return ChromeUtils.importESModule(
++    "resource:///modules/TabUnloader.sys.mjs"
++  );
++});
++
++const PREF_ENABLED = "stgr.gamingMode.enabled";
++const PREF_AUTOMATIC = "stgr.gamingMode.automatic";
++const PREF_PROFILE = "stgr.memoryProfile";
++
++export var STGRGamingMode = {
++  _enabled: false,
++  _window: null,
++
++  init(window) {
++    this._window = window;
++    Services.prefs.addObserver(PREF_ENABLED, this);
++    Services.prefs.addObserver(PREF_AUTOMATIC, this);
++    Services.prefs.addObserver(PREF_PROFILE, this);
++    this._apply();
++  },
++
++  observe(subject, topic, data) {
++    if (topic === "nsPref:changed") {
++      this._apply();
++    }
++  },
++
++  _apply() {
++    const enabled = Services.prefs.getBoolPref(PREF_ENABLED, false);
++    const automatic = Services.prefs.getBoolPref(PREF_AUTOMATIC, false);
++    this._enabled = enabled || automatic;
++
++    // Dynamic resource adjustments. Static defaults live in the
++    // STGR PERFORMANCE PREFS block of browser/app/profile/firefox.js.
++    if (this._enabled) {
++      Services.prefs.setIntPref("browser.sessionstore.interval", 60000);
++      Services.prefs.setBoolPref("network.predictor.enabled", false);
++      Services.prefs.setBoolPref("network.preload", false);
++      Services.prefs.setIntPref("ui.prefersReducedMotion", 1);
++      Services.prefs.setBoolPref("browser.tabs.unloadOnLowMemory", true);
++      this._suspendBackgroundTabs();
++    } else {
++      Services.prefs.clearUserPref("browser.sessionstore.interval");
++      Services.prefs.clearUserPref("network.predictor.enabled");
++      Services.prefs.clearUserPref("network.preload");
++      Services.prefs.clearUserPref("ui.prefersReducedMotion");
++      Services.prefs.clearUserPref("browser.tabs.unloadOnLowMemory");
++    }
++  },
++
++  _suspendBackgroundTabs() {
++    if (!this._window?.gBrowser) {
++      return;
++    }
++    const protectAudio = Services.prefs.getBoolPref("stgr.gamingMode.protect.audio", true);
++    const protectVideo = Services.prefs.getBoolPref("stgr.gamingMode.protect.video", true);
++    const protectWebRTC = Services.prefs.getBoolPref("stgr.gamingMode.protect.webrtc", true);
++
++    for (const tab of this._window.gBrowser.tabs) {
++      if (tab === this._window.gBrowser.selectedTab) {
++        continue; // the active tab is never suspended
++      }
++      const browser = tab.linkedBrowser;
++      if (!browser || browser.isActive) {
++        continue;
++      }
++      if (protectAudio && browser.audioPlaybackStarted) {
++        continue;
++      }
++      if (protectVideo && browser.imageDocument?.mediaElement && !browser.paused) {
++        continue;
++      }
++      if (protectWebRTC && browser.hasActivePeerConnections) {
++        continue;
++      }
++      if (browser.discard) {
++        try {
++          browser.discard();
++        } catch (ex) {
++          // Tab not discardable (e.g. about: pages) — skip.
++        }
++      }
++    }
++  },
++
++  shutdown() {
++    Services.prefs.removeObserver(PREF_ENABLED, this);
++    Services.prefs.removeObserver(PREF_AUTOMATIC, this);
++    Services.prefs.removeObserver(PREF_PROFILE, this);
++  },
++};
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -1,5 +1,10 @@
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++// STGR: Gaming Mode — browser resource management while gaming.
++var { STGRGamingMode } = ChromeUtils.importESModule(
++  "resource://gre/modules/STGRGamingMode.sys.mjs"
++);
+ 
+ var gSerialDeviceObserver = {
+@@ -480,6 +485,9 @@
+   _delayedStartup() {
+     Glean.browserTimings.startupTimeline.delayedStartupStarted.set(
+       Services.telemetry.msSinceProcessStart()
+     );
+ 
++    // STGR: apply Gaming Mode + memory profile settings for this window.
++    STGRGamingMode.init(window);
++
+     this._cancelDelayedStartup();

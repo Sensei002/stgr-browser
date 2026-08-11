@@ -1,0 +1,54 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download latest release installer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/check_update.py --json
+          python scripts/check_update.py --download
+
+      - name: Extract portable build
+        shell: bash
+        run: |
+          powershell -Command "Expand-Archive -Path releases/*.zip -DestinationPath stgr-bench -Force"
+
+      - name: Run benchmark (3 runs, offline workload)
+        shell: bash
+        run: |
+          python scripts/benchmark/benchmark.py \
+            --binary "$(pwd)/stgr-bench/stgr.exe" --runs 3 --url about:blank
+
+      - name: Compare against committed baseline
+        shell: bash
+        run: |
+          BASELINE=benchmark/baselines/win64.json
+          if [ -f "$BASELINE" ]; then
+            python scripts/benchmark/benchmark.py \
+              --binary "$(pwd)/stgr-bench/stgr.exe" \
+              --compare "$BASELINE" --runs 3
+          else
+            echo "no committed baseline yet — recording first results"
+          fi
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark/results/
+          retention-days: 30

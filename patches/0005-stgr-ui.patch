@@ -1,0 +1,95 @@
+STGR PATCH: 0005 — STGR chrome UI (dark dojo theme, compact tabs, red accents)
+Purpose:                Style the native Firefox chrome with the STGR dark red/black identity
+                        without replacing the UI with a web application. Tabs become compact,
+                        red is used sparingly as an accent, and the default theme is dark.
+                        In current Firefox the shared chrome stylesheet is
+                        browser/themes/shared/browser-shared.css; the STGR rules are appended
+                        at the end (canonical copy: stgr/ui/chrome/stgr-chrome.css).
+Files changed:          browser/themes/shared/browser-shared.css
+Security impact:        None. Purely cosmetic CSS.
+Performance impact:     Negligible. Reduced motion is respected via prefers-reduced-motion.
+Upstream compatibility: Appending at EOF of the shared stylesheet is stable; the tail
+                        anchor is verified on the release branch. Rebase risk LOW.
+
+diff --git a/browser/themes/shared/browser-shared.css b/browser/themes/shared/browser-shared.css
+--- a/browser/themes/shared/browser-shared.css
++++ b/browser/themes/shared/browser-shared.css
+@@ -1723,6 +1723,78 @@
+ /* Bookmarks roots menu-items */
+ 
+ #BMB_bookmarksToolbar,
+ #bookmarksToolbarFolderMenu {
+   --menuitem-icon: url("chrome://browser/skin/places/bookmarksToolbar.svg");
+ }
++
++/* ── STGR Browser chrome overrides ─────────────────────────────
++ * Dark red/black dojo theme. Red is an accent, not a light show.
++ * Canonical copy: stgr/ui/chrome/stgr-chrome.css */
++
++:root {
++  --stgr-black: #080808;
++  --stgr-dark-black: #0d0d0d;
++  --stgr-red: #e8202a;
++  --stgr-dark-red: #8f1018;
++  --stgr-gold: #c8a45d;
++  --tab-min-height: 28px;
++}
++
++/* Dark chrome surfaces */
++#navigator-toolbox,
++#main-window {
++  background-color: var(--stgr-dark-black);
++}
++
++/* Compact, quiet tabs */
++.tabbrowser-tab {
++  min-height: var(--tab-min-height);
++}
++.tabbrowser-tab .tab-background {
++  border-radius: 6px;
++}
++.tabbrowser-tab:hover .tab-background {
++  background-color: rgba(232, 32, 42, 0.08);
++}
++.tabbrowser-tab[selected] .tab-background {
++  border-top: 2px solid var(--stgr-red);
++}
++
++/* Address bar */
++#urlbar {
++  border-radius: 8px;
++}
++#urlbar[focused="true"] {
++  outline: 2px solid rgba(232, 32, 42, 0.45);
++}
++
++/* Menus, panels, tooltips */
++menupopup,
++panel {
++  --arrowpanel-background: var(--stgr-dark-black);
++  --arrowpanel-border-color: #262626;
++  --arrowpanel-color: #f2f2f2;
++}
++
++/* Text selection + focus accents */
++::selection {
++  background-color: var(--stgr-dark-red);
++}
++
++/* Gaming Mode active indicator (subtle, right side of toolbar) */
++#stgr-gaming-indicator {
++  color: var(--stgr-red);
++  font-size: 10px;
++  letter-spacing: 1px;
++  padding: 2px 8px;
++  border: 1px solid rgba(232, 32, 42, 0.4);
++  border-radius: 999px;
++  margin-inline: 4px;
++}
++
++@media (prefers-reduced-motion: reduce) {
++  * {
++    transition: none !important;
++    animation: none !important;
++  }
++}

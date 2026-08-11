@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Release jobs need to write (GitHub Release + tag). Least privilege: only
+# this workflow, and only on tag pushes — never on pull requests.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build artifacts
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets: inherit
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stgr-win64
+          path: release-assets
+
+      - name: Sign artifacts (when a certificate secret is configured)
+        shell: bash
+        env:
+          WIN_CERT_B64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WIN_CERT_PASS: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if [ -z "$WIN_CERT_B64" ]; then
+            echo "::warning::No signing certificate configured — publishing unsigned. \
+            Users may see SmartScreen warnings (documented in docs/release-process.md)."
+            exit 0
+          fi
+          echo "$WIN_CERT_B64" | base64 -d > /tmp/stgr-cert.pfx
+          # signtool ships with the Windows SDK on this runner.
+          SIGTOOL=$(find "/c/Program Files (x86)/Windows Kits/10/bin" -name signtool.exe | sort | tail -1)
+          "$SIGTOOL" sign /f /tmp/stgr-cert.pfx /p "$WIN_CERT_PASS" \
+            /fd sha256 /tr http://timestamp.digicert.com /td sha256 \
+            release-assets/*.exe
+          rm -f /tmp/stgr-cert.pfx
+
+      - name: Recompute checksums after signing
+        shell: bash
+        run: |
+          python scripts/generate_checksums.py release-assets
+
+      - name: Draft GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            release-assets/STGR-Browser-*-Win64-Setup.exe \
+            release-assets/STGR-Browser-*-Win64.zip \
+            release-assets/SHA256SUMS.txt \
+            release-assets/build-manifest.json \
+            --title "STGR Browser v${VERSION}" \
+            --notes "$(python scripts/release_notes.py "$VERSION" 2>/dev/null || echo 'STGR Browser release.')" \
+            --draft

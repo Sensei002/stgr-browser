@@ -1,0 +1,72 @@
+/* STGR Browser — native chrome styling.
+ * Dark red/black dojo theme. Red is an accent, not a light show.
+ * This file is the canonical copy; patches/0005-stgr-ui.patch adds it to
+ * the Firefox tree as browser/components/stgr/ui/stgr-chrome.css. */
+
+:root {
+  --stgr-black: #080808;
+  --stgr-dark-black: #0d0d0d;
+  --stgr-red: #e8202a;
+  --stgr-dark-red: #8f1018;
+  --stgr-gold: #c8a45d;
+  --tab-min-height: 28px;
+}
+
+/* Dark chrome surfaces */
+#navigator-toolbox,
+#main-window {
+  background-color: var(--stgr-dark-black);
+}
+
+/* Compact, quiet tabs */
+.tabbrowser-tab {
+  min-height: var(--tab-min-height);
+}
+.tabbrowser-tab .tab-background {
+  border-radius: 6px;
+}
+.tabbrowser-tab:hover .tab-background {
+  background-color: rgba(232, 32, 42, 0.08);
+}
+.tabbrowser-tab[selected] .tab-background {
+  border-top: 2px solid var(--stgr-red);
+}
+
+/* Address bar */
+#urlbar {
+  border-radius: 8px;
+}
+#urlbar[focused="true"] {
+  outline: 2px solid rgba(232, 32, 42, 0.45);
+}
+
+/* Menus, panels, tooltips */
+menupopup,
+panel {
+  --arrowpanel-background: var(--stgr-dark-black);
+  --arrowpanel-border-color: #262626;
+  --arrowpanel-color: #f2f2f2;
+}
+
+/* Text selection + focus accents */
+::selection {
+  background-color: var(--stgr-dark-red);
+}
+
+/* Gaming Mode active indicator (subtle, right side of toolbar) */
+#stgr-gaming-indicator {
+  color: var(--stgr-red);
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border: 1px solid rgba(232, 32, 42, 0.4);
+  border-radius: 999px;
+  margin-inline: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

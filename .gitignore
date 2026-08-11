@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────
+# STGR Browser — .gitignore
+# ─────────────────────────────────────────────────────────────
+
+# Firefox source tree. Synced by scripts/update_firefox.py and
+# scripts/sync_firefox.py. Never committed.
+/firefox/
+
+# Firefox build objects (mach builds out-of-tree by default).
+/obj-*/
+/mozobj*/
+/dist/
+/firefox/obj-*/
+
+# Automation working directories (created by update_firefox.py).
+/automation/firefox-*/
+/automation/*.log
+
+# Local release staging (artifacts are uploaded to GitHub Releases).
+/releases/
+*.exe
+*.zip
+*.msi
+
+# Generated checksums / manifests.
+SHA256SUMS.txt
+/build-manifest.json
+
+# Generated branding artifacts (derived from the master logo by scripts/make_icons.py).
+# The generated set IS committed so CI builds work without Pillow/cairosvg.
+stgr/branding/icons/*
+!stgr/branding/icons/.gitkeep
+!stgr/branding/icons/icon-*.png
+!stgr/branding/icons/stgr.ico
+
+# Benchmark results (machine-specific; committed baselines live in benchmark/baselines/).
+benchmark/results/
+benchmark/results-*.json
+
+# Python.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE / editor.
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Secrets — NEVER commit these.
+*.pfx
+*.p12
+*.key
+*.pem
+*.keystore
+.env
+.env.*

@@ -1,0 +1,24 @@
+STGR PATCH: 0001 — Branding strings and upstream attribution
+Purpose:                Identify the product as "STGR Browser" and always attribute the
+                        upstream base as "Based on Mozilla Firefox". Most visual branding
+                        (name, icons, installer, version strings) is handled by the
+                        --with-branding directory (stgr/build/branding) via the mozconfig;
+                        this patch covers the few hardcoded chrome strings. Preference-level
+                        brand values (update channel, theme) live in the 0002 pref block.
+Files changed:          browser/base/content/aboutDialog.xhtml
+Security impact:        None. Cosmetic strings only.
+Performance impact:     None.
+Upstream compatibility: aboutDialog.xhtml structure is stable; context verified against the
+                        release branch (line ~42-45). Rebase risk LOW.
+
+diff --git a/browser/base/content/aboutDialog.xhtml b/browser/base/content/aboutDialog.xhtml
+--- a/browser/base/content/aboutDialog.xhtml
++++ b/browser/base/content/aboutDialog.xhtml
+@@ -42,3 +42,7 @@
+       <vbox id="leftBox" flex="1"/>
+       <vbox id="rightBox">
++        <!-- STGR: always attribute the upstream base. -->
++        <description id="stgrUpstreamAttribution"
++                     class="stgr-attribution"
++                     value="Based on Mozilla Firefox"/>
+         <label id="release" hidden="true">

@@ -1,0 +1,104 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & validation
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax check
+        shell: bash
+        run: python -m compileall -q scripts stgr
+
+      - name: Validate JSON (config, manifests, templates)
+        shell: bash
+        run: |
+          set -e
+          for f in $(find . -name '*.json' -not -path './firefox/*' -not -path './.git/*'); do
+            python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f"
+          done
+          echo "all JSON valid"
+
+      - name: Validate workflow YAML
+        shell: bash
+        run: |
+          pip install --quiet pyyaml
+          python - <<'EOF'
+          import glob, yaml
+          for f in glob.glob(".github/workflows/*.yml"):
+              yaml.safe_load(open(f, encoding="utf-8"))
+          print("all workflow YAML valid")
+          EOF
+
+      - name: Pref-sync lint (canonical files vs patches)
+        shell: bash
+        run: python scripts/lint_prefs_sync.py
+
+      - name: Updater validation matrix (offline)
+        shell: bash
+        run: python scripts/check_update.py --self-test
+
+      - name: Patch header lint (every patch documents purpose/files/impact)
+        shell: bash
+        run: python - <<'EOF'
+          from pathlib import Path
+          required = ("Purpose:", "Files changed:", "Security impact:",
+                      "Performance impact:", "Upstream compatibility:")
+          bad = []
+          for p in sorted(Path("patches").glob("*.patch")):
+              head = p.read_text(encoding="utf-8")[:2000]
+              for token in required:
+                  if token not in head:
+                      bad.append(f"{p.name}: missing '{token}'")
+          if bad:
+              raise SystemExit("\n".join(bad))
+          print("patch headers OK")
+          EOF
+
+  integration:
+    name: Smoke + privacy tests
+    runs-on: windows-2022
+    if: github.event_name == 'workflow_dispatch'
+    needs: lint
+    env:
+      STGR_BROWSER_BINARY: ${{ github.workspace }}/stgr-firefox/firefox.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the latest STGR release
+        shell: bash
+        run: |
+          python scripts/check_update.py --json
+          python scripts/check_update.py --download
+
+      - name: Extract portable build
+        shell: bash
+        run: |
+          powershell -Command "Expand-Archive -Path releases/*.zip -DestinationPath stgr-firefox -Force"
+
+      - name: Smoke test
+        shell: bash
+        run: python scripts/smoke_test.py --json > smoke-test-results.json
+
+      - name: Privacy network test
+        shell: bash
+        run: python scripts/privacy_test.py --json > privacy-test-results.json
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            smoke-test-results.json
+            privacy-test-results.json

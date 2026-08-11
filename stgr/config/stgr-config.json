@@ -1,0 +1,76 @@
+{
+  "$comment": "STGR central configuration — single source of truth for functional constants (§30 of the engineering spec). Scripts and CI read this file. Do not scatter STGR constants across the Firefox tree.",
+  "product": {
+    "name": "STGR Browser",
+    "brand": "STEiGER Dojo",
+    "website": "https://steigerdojo.mvp.bd",
+    "version": "1.0.0",
+    "update_channel": "stable",
+    "source_repository": "https://github.com/Sensei002/stgr-browser",
+    "update_repository": "https://github.com/Sensei002/stgr-browser"
+  },
+  "firefox": {
+    "upstream_version": "153.0",
+    "upstream_repository": "https://github.com/mozilla-firefox/firefox",
+    "upstream_branch": "release",
+    "release_tag_pattern": "FIREFOX_{version}_RELEASE",
+    "source_dir": "firefox"
+  },
+  "defaults": {
+    "search_engine": "duckduckgo",
+    "gaming_mode": "off",
+    "blocker_enabled": true,
+    "telemetry_enabled": false,
+    "memory_profile": "balanced",
+    "new_tab_offline": true,
+    "hardware_acceleration": true,
+    "background_tab_suspension": true,
+    "default_browser_prompt": true,
+    "update_check_interval_days": 7
+  },
+  "build": {
+    "target": "windows-x64",
+    "mozconfig": "stgr/build/mozconfig.windows-x64-release",
+    "branding_dir": "stgr/build/branding",
+    "ccache": "sccache",
+    "lto": true,
+    "pgo": false,
+    "installer": true,
+    "portable_archive": true
+  },
+  "ublock": {
+    "extension_id": "uBlock0@raymondhill.net",
+    "version": "1.73.0",
+    "source_repository": "https://github.com/gorhill/uBlock",
+    "release_asset_pattern": "uBlock0_{version}.firefox.signed.xpi",
+    "amo_page": "https://addons.mozilla.org/firefox/addon/ublock-origin/"
+  },
+  "privacy": {
+    "telemetry_disabled": true,
+    "crash_reports_opt_in": true,
+    "allowed_background_hosts": [
+      "aus5.mozilla.org",
+      "addons.mozilla.org",
+      "blocklist.addons.mozilla.org",
+      "shavar.services.mozilla.com",
+      "firefox.settings.services.mozilla.com"
+    ],
+    "note": "Hosts a stock STGR build may legitimately contact while idle. See docs/privacy.md."
+  },
+  "release": {
+    "assets_prefix": "STGR-Browser-{version}-Win64",
+    "installer": "STGR-Browser-{version}-Win64-Setup.exe",
+    "portable": "STGR-Browser-{version}-Win64.zip",
+    "checksums": "SHA256SUMS.txt",
+    "source_archive": "STGR-source-{version}.zip",
+    "tag_prefix": "v"
+  },
+  "benchmark": {
+    "thresholds": {
+      "startup_regression_pct": 15,
+      "idle_memory_regression_pct": 20,
+      "ten_tab_memory_regression_pct": 20
+    },
+    "runs": 3
+  }
+}

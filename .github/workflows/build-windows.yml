@@ -1,0 +1,85 @@
+name: Build Windows x64
+
+# Reusable workflow (called by release.yml and manually).
+# Least privilege: contents: read — no write permissions on build.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: "dev"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 360
+    env:
+      MOZCONFIG: ${{ github.workspace }}/stgr/build/mozconfig.windows-x64-release
+      MOZ_AUTOMATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Firefox source (git objects)
+        uses: actions/cache@v4
+        with:
+          path: firefox/.git
+          key: firefox-git-${{ runner.os }}-${{ hashFiles('stgr/config/stgr-config.json') }}
+          restore-keys: |
+            firefox-git-${{ runner.os }}-
+
+      - name: Sync Firefox Stable source
+        shell: bash
+        run: python scripts/update_firefox.py sync
+
+      - name: Cache sccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: sccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('firefox/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Bootstrap build tooling
+        shell: bash
+        run: |
+          cd firefox
+          python mach bootstrap --no-interactive --application-choice=browser \
+            || python mach bootstrap --application-choice=browser
+
+      - name: Apply STGR patches
+        shell: bash
+        run: python scripts/apply_patches.py apply
+
+      - name: Build
+        shell: bash
+        run: python scripts/build_stgr.py build
+
+      - name: Package (installer + checksums + manifest)
+        shell: bash
+        run: python scripts/build_stgr.py package
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-win64
+          path: |
+            releases/*.exe
+            releases/*.zip
+            releases/SHA256SUMS.txt
+            releases/build-manifest.json
+          retention-days: 14

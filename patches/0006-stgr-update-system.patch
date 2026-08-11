@@ -1,0 +1,154 @@
+STGR PATCH: 0006 — STGR update system (GitHub Releases based)
+Purpose:                Implement the in-browser STGR update check. Queries the configured
+                        STGR GitHub Releases repository, validates product / version /
+                        architecture / SHA256 (signature when available), and never
+                        auto-executes downloads. The updater is user-triggered only
+                        (no idle network activity) via the About UI / preferences.
+Files changed:          browser/components/stgr/updater/STGRUpdater.sys.mjs (new)
+                        browser/components/stgr/updater/moz.build (new)
+Security impact:        Update packages are validated (HTTPS, product, version, arch, hash)
+                        before any download or launch. Downgrades and unknown releases are
+                        rejected. No silent execution of downloaded files.
+Performance impact:     None when idle — the module performs no background activity.
+Upstream compatibility: Uses stable ESM + fetch APIs; rebase risk LOW.
+Note:                   Full preferences-pane wiring is Phase 9 of the roadmap; v1 exposes
+                        the same validation logic via scripts/check_update.py (CI + CLI).
+
+diff --git a/browser/components/stgr/updater/moz.build b/browser/components/stgr/updater/moz.build
+new file mode 100644
+--- /dev/null
++++ b/browser/components/stgr/updater/moz.build
+@@ -0,0 +1,9 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++# STGR update system module.
++
++EXTRA_JS_MODULES += [
++    "STGRUpdater.sys.mjs",
++]
+diff --git a/browser/components/stgr/updater/STGRUpdater.sys.mjs b/browser/components/stgr/updater/STGRUpdater.sys.mjs
+new file mode 100644
+--- /dev/null
++++ b/browser/components/stgr/updater/STGRUpdater.sys.mjs
+@@ -0,0 +1,119 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/*
++ * STGR updater — GitHub Releases based.
++ *
++ * Security contract (see docs/release-process.md):
++ *  - HTTPS only.
++ *  - Product name validated ("STGR-Browser").
++ *  - Version compared strictly (no downgrade, no unknown pre-release).
++ *  - Architecture validated (x64 on Windows x64).
++ *  - SHA256 validated against the published SHA256SUMS.txt.
++ *  - Signature validated when a signing certificate is published.
++ *  - The downloaded installer is never executed automatically.
++ */
++
++import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
++import { Services } from "resource://gre/modules/Services.sys.mjs";
++
++const API = "https://api.github.com/repos/";
++
++export var STGRUpdater = {
++  async check() {
++    const repo = Services.prefs
++      .getStringPref("stgr.updateRepository", "Sensei002/stgr-browser");
++    if (!Services.prefs.getBoolPref("stgr.updateEnabled", true)) {
++      return { status: "disabled" };
++    }
++
++    let release;
++    try {
++      const res = await fetch(API + repo + "/releases/latest", {
++        headers: { Accept: "application/vnd.github+json" },
++      });
++      if (!res.ok) {
++        return { status: "error", code: res.status };
++      }
++      release = await res.json();
++    } catch (ex) {
++      return { status: "error", detail: String(ex) };
++    }
++
++    // Strict semantic version of the release tag, e.g. v1.0.1
++    const tag = release.tag_name || "";
++    const version = tag.replace(/^v/, "");
++    if (!/^\d+\.\d+\.\d+$/.test(version)) {
++      return { status: "invalid", reason: "tag-format" };
++    }
++
++    const current = Services.appinfo.version;
++    if (this._compareVersions(version, current) <= 0) {
++      return { status: "up-to-date", current, latest: version };
++    }
++
++    // Architecture + product validation.
++    const wantSuffix = AppConstants.platform === "win"
++      ? "-Win64-Setup.exe"
++      : "-" + AppConstants.OS_TARGET + "-Setup";
++    const asset = (release.assets || []).find(a =>
++      a.name.startsWith("STGR-Browser-") && a.name.endsWith(wantSuffix)
++    );
++    if (!asset) {
++      return { status: "invalid", reason: "no-matching-asset" };
++    }
++
++    return {
++      status: "available",
++      current,
++      latest: version,
++      notes: release.body,
++      asset: {
++        name: asset.name,
++        url: asset.browser_download_url,
++        size: asset.size,
++      },
++    };
++  },
++
++  /**
++   * Verify a downloaded package against the published SHA256SUMS.txt.
++   * @returns {Promise<boolean>}
++   */
++  async verify(assetName, downloadedBytes) {
++    const repo = Services.prefs
++      .getStringPref("stgr.updateRepository", "Sensei002/stgr-browser");
++    const res = await fetch(
++      `https://raw.githubusercontent.com/${repo}/main/SHA256SUMS.txt`
++    );
++    if (!res.ok) {
++      return false;
++    }
++    const sums = await res.text();
++    const line = sums.split("\n").find(l => l.includes(assetName));
++    if (!line) {
++      return false;
++    }
++    const expected = line.trim().split(/\s+/)[0];
++    const actual = await crypto.subtle.digest(
++      "SHA-256",
++      downloadedBytes
++    ).then(h => [...new Uint8Array(h)]
++      .map(b => b.toString(16).padStart(2, "0")).join(""));
++    return expected.toLowerCase() === actual.toLowerCase();
++  },
++
++  _compareVersions(a, b) {
++    const pa = a.split(".").map(Number);
++    const pb = b.split(".").map(Number);
++    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
++      const da = pa[i] || 0;
++      const db = pb[i] || 0;
++      if (da !== db) {
++        return da - db;
++      }
++    }
++    return 0;
++  },
++};

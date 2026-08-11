@@ -1,0 +1,23 @@
+{
+  "normal": {
+    "tabs.suspendAfterSeconds": 0,
+    "timerThrottling": false,
+    "backgroundNetwork": true,
+    "animation": true,
+    "preload": true
+  },
+  "balanced": {
+    "tabs.suspendAfterSeconds": 600,
+    "timerThrottling": false,
+    "backgroundNetwork": true,
+    "animation": true,
+    "preload": true
+  },
+  "aggressive": {
+    "tabs.suspendAfterSeconds": 120,
+    "timerThrottling": true,
+    "backgroundNetwork": false,
+    "animation": false,
+    "preload": false
+  }
+}

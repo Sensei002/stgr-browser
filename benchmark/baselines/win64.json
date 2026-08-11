@@ -1,0 +1,16 @@
+{
+  "$comment": "Placeholder baseline. Replace with a real baseline produced by scripts/benchmark/benchmark.py after the first stable release (per docs/performance.md: no fabricated benchmark data).",
+  "stgr_version": "1.0.0",
+  "firefox_version": "153.0",
+  "platform": "windows-x64",
+  "benchmark_version": "1.0.0",
+  "metrics": {
+    "cold_start.seconds": null,
+    "warm_start.seconds": null,
+    "idle.ram_mb": null,
+    "idle.cpu_percent": null,
+    "tabs.5.ram_mb": null,
+    "tabs.10.ram_mb": null,
+    "tabs.20.ram_mb": null
+  }
+}

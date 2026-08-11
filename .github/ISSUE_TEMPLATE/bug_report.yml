@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a problem with STGR Browser
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please include the STGR and Firefox versions from
+        the About page (Menu → Help → About STGR Browser).
+  - type: input
+    id: stgr-version
+    attributes:
+      label: STGR version
+      placeholder: e.g. 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: firefox-version
+    attributes:
+      label: Firefox base version
+      placeholder: e.g. 153.0
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - UI
+        - Privacy
+        - Performance
+        - Memory
+        - Gaming Mode
+        - uBlock
+        - Extensions
+        - Updater
+        - Installer
+        - Build / CI
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: 1. Open… 2. Click… 3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+  - type: textarea
+    id: notes
+    attributes:
+      label: RAM / CPU / privacy impact notes
+      description: Does this relate to resource usage or network activity?

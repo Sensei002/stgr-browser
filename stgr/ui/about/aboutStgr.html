@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<!--
+  STGR Browser — About page (resource://stgr/about/aboutStgr.html).
+  Placeholders are substituted at build time from stgr/config/stgr-config.json.
+  Local only; no network requests.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>About STGR Browser</title>
+  <style>
+    :root {
+      --black: #080808; --dark-black: #0d0d0d; --stgr-red: #e8202a;
+      --dark-red: #8f1018; --gold: #c8a45d; --text: #f2f2f2; --muted: #8a8a8a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh; display: grid; place-items: center;
+      background:
+        radial-gradient(700px 380px at 50% -10%, rgba(232,32,42,.12), transparent 70%),
+        radial-gradient(900px 500px at 50% 120%, rgba(143,16,24,.16), transparent 70%),
+        var(--black);
+      color: var(--text);
+      font-family: system-ui, "Segoe UI", sans-serif;
+      padding: 40px 20px;
+    }
+    .card {
+      width: min(560px, 94vw);
+      background: rgba(13,13,13,.82);
+      border: 1px solid #232323;
+      border-radius: 20px;
+      padding: 44px 40px 36px;
+      text-align: center;
+      box-shadow: 0 30px 80px rgba(0,0,0,.6);
+      backdrop-filter: blur(8px);
+    }
+    .logo { width: 142px; height: 120px; margin-bottom: 18px; }
+    h1 { font-size: 30px; font-weight: 800; letter-spacing: 2px; }
+    h1 em { font-style: normal; color: var(--stgr-red); }
+    .tagline { margin-top: 10px; color: var(--muted); font-size: 14px; letter-spacing: 1px; }
+    .versions {
+      margin: 26px auto 0; padding: 16px 20px; max-width: 340px;
+      background: #101010; border: 1px solid #242424; border-radius: 12px;
+      font-size: 13px; color: #ccc;
+    }
+    .versions strong { color: #fff; font-weight: 700; }
+    .versions .upstream { color: var(--gold); }
+    .org { margin-top: 26px; color: #666; font-size: 12px; letter-spacing: 3px; }
+    .badge {
+      display: inline-block; margin-top: 14px; padding: 5px 14px;
+      border: 1px solid rgba(200,164,93,.4); color: var(--gold);
+      border-radius: 999px; font-size: 11px; letter-spacing: 2px;
+    }
+    .actions { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .actions a {
+      text-decoration: none; font-size: 13px; padding: 10px 16px; border-radius: 10px;
+      border: 1px solid #2c2c2c; color: var(--text); background: #141414;
+      transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+    }
+    .actions a:hover { border-color: var(--stgr-red); background: rgba(232,32,42,.08); transform: translateY(-1px); }
+    .actions a.primary { border-color: var(--stgr-red); background: var(--stgr-red); color: #fff; font-weight: 700; }
+    .actions a.primary:hover { background: var(--dark-red); }
+    .foot { margin-top: 26px; color: #444; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <img class="logo" src="../branding/stgr-logo.svg" alt="STGR Browser logo">
+    <h1>STGR <em>Browser</em></h1>
+    <p class="tagline">Built for speed. Designed for gamers. Private by default.</p>
+
+    <div class="versions">
+      <div><strong>STGR Browser {{STGR_VERSION}}</strong></div>
+      <div class="upstream">Based on Mozilla Firefox {{FIREFOX_VERSION}}</div>
+    </div>
+
+    <p class="org">STEiGER DOJO</p>
+    <span class="badge">OPEN SOURCE</span>
+
+    <nav class="actions">
+      <a class="primary" href="{{UPDATE_URL}}">Check for updates</a>
+      <a href="{{RELEASE_NOTES_URL}}">Release notes</a>
+      <a href="{{SOURCE_URL}}">Source code</a>
+      <a href="about:license">Licenses</a>
+      <a href="about:preferences#privacy">Privacy</a>
+      <a href="{{WEBSITE_URL}}" rel="noopener noreferrer">Visit {{WEBSITE_DOMAIN}}</a>
+    </nav>
+
+    <p class="foot">No ads. No STGR telemetry. No unnecessary bloat.</p>
+  </main>
+</body>
+</html>

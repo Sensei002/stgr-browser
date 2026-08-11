@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────
+# STGR Browser — Windows x64 release build configuration
+#
+# Used by scripts/build_stgr.py (sets MOZCONFIG to this file) and by the
+# GitHub Actions build workflow. Run from a MozillaBuild shell after
+# bootstrapping:
+#
+#   export MOZCONFIG=<abs path to this file>
+#   python mach build
+#
+# Reference: https://firefox-source-docs.mozilla.org/build/buildsystem/mozconfigs.html
+# ─────────────────────────────────────────────────────────────
+
+ac_add_options --enable-application=browser
+
+# Release mode + optimization. We use ONLY supported Firefox release
+# optimizations — no unsafe flags, no disabled security mitigations.
+ac_add_options --enable-release
+ac_add_options --enable-optimize
+ac_add_options --enable-lto
+
+# Faster CI/local rebuilds via sccache (cache is keyed by compiler inputs,
+# correctness-neutral). Remove if sccache is not installed.
+ac_add_options --with-ccache=sccache
+
+# Windows installer (NSIS setup.exe) for release packages.
+ac_add_options --enable-installer
+
+# Tests are compiled in a separate CI configuration; the release binary
+# stays lean. (xpcshell/mochitest need a tests-enabled build — see docs.)
+ac_add_options --disable-tests
+
+# STGR branding directory (outside the Firefox tree, at the repo root).
+# `--with-branding` supplies name/icon/version metadata to the build.
+ac_add_options --with-branding=$topsrcdir/../stgr/build/branding
+
+# ── Profile-guided optimization ──────────────────────────────
+# PGO is OFF by default (expensive on CI). To enable, uncomment and
+# follow docs/performance.md — it must use a real, representative
+# workload; never fabricated profile data.
+# ac_add_options --enable-profile-guided-optimization
+
+# ── What we deliberately do NOT set ──────────────────────────
+# No --disable-sandbox, no --disable-optimize, no memory/crash hacks.
+# Security architecture stays exactly as upstream.
