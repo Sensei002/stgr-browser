@@ -13,7 +13,9 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -34,23 +36,27 @@ def series_list() -> list[str]:
 
 
 def _git(cmd: list, patch: str, check: bool = False):
-    # Always feed git apply an LF-normalized patch via stdin (git apply -).
-    #   - The Firefox tree is ALWAYS LF: upstream .gitattributes forces
-    #     `* -text` (no line-ending normalization) on every checkout.
-    #   - git apply only matches a CRLF patch against a CRLF tree, so a patch
-    #     file checked out CRLF would fail against the LF Firefox tree
-    #     ("patch does not apply"). LF patches apply cleanly to BOTH LF and
-    #     CRLF trees (verified via an apply matrix). This stdin normalization
-    #     is the primary guarantee; the repo .gitattributes (eol=lf for *.patch)
-    #     is defense-in-depth for anything that applies the files by path.
-    #   - encoding="utf-8" so the non-ASCII patch content (e.g. \u9053\u5834 in the
-    #     new-tab patch) survives even on a cp1252 Windows console without
-    #     PYTHONUTF8.
-    #   - Deliberately NO `--recount`: it mis-parses the known-good hunks in
-    #     this series (verified: 0004 fails with --recount, passes without).
-    data = (REPO_ROOT / patch).read_text(encoding="utf-8").replace("\r\n", "\n")
-    return run(["git", "apply", *cmd, "-"], cwd=FIREFOX_DIR,
-               check=check, capture=True, input=data, encoding="utf-8")
+    # Apply an LF-normalized patch from a temporary FILE, never via stdin:
+    # subprocess text-mode stdin translates '\n' to '\r\n' on Windows
+    # (os.linesep), so 'git apply -' would receive a CRLF patch. git apply
+    # only matches a CRLF patch against a CRLF tree, and the Firefox tree is
+    # LF on CI (runner autocrlf differs from local machines) — a CRLF patch
+    # fails with "patch does not apply" (reproduced). An LF patch file
+    # applies cleanly to both LF and CRLF trees (verified via an apply
+    # matrix). Writing exact bytes to a temp file avoids all text-mode
+    # translation on every platform; byte-level normalization also keeps
+    # non-ASCII patch content (e.g. the new-tab \u9053\u5834) intact.
+    # Deliberately NO `--recount`: it mis-parses the known-good hunks in
+    # this series (verified: 0004 fails with --recount, passes without).
+    data = (REPO_ROOT / patch).read_bytes().replace(b"\r\n", b"\n")
+    fd, tmp = tempfile.mkstemp(suffix=".patch")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        return run(["git", "apply", *cmd, tmp], cwd=FIREFOX_DIR,
+                   check=check, capture=True)
+    finally:
+        os.unlink(tmp)
 
 
 def check_series(apply: bool) -> list[dict]:
