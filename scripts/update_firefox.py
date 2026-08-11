@@ -87,8 +87,10 @@ def sync_source(cfg: dict) -> None:
     deterministic and reproducible (spec \u00a773).
     """
     repo = cfg["firefox"]["upstream_repository"]
+    # "153.0" -> "FIREFOX_153_0_RELEASE": the release tag pattern uses
+    # underscores, not dots (dotted "FIREFOX_153.0_RELEASE" does not exist).
     tag = cfg["firefox"]["release_tag_pattern"].format(
-        version=cfg["firefox"]["upstream_version"])
+        version=cfg["firefox"]["upstream_version"].replace(".", "_"))
     if not (FIREFOX_DIR / ".git").exists():
         log("sync", f"cloning {repo} at {tag} (blob:none filter)")
         run(["git", "clone", "--filter=blob:none", "--single-branch",
