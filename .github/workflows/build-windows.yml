@@ -14,22 +14,18 @@ on:
 permissions:
   contents: read
 
-# Python on the Windows runner pipes stdout as cp1252; our scripts print
-# non-cp1252 glyphs (✅/❌/—/…) — force UTF-8 mode so builds never die on
-# encoding errors.
 env:
   PYTHONUTF8: "1"
+  MOZCONFIG: ${{ github.workspace }}/stgr/build/mozconfig.windows-x64-release
+  # NOTE: no MOZ_AUTOMATION here. mach on Windows asserts MozillaBuild is
+  # installed (C:\mozilla-build) on every invocation, so bootstrap below must
+  # run in a normal context. build_stgr.py sets MOZ_AUTOMATION=1 itself for
+  # the build/package steps (MozillaBuild exists by then).
 
 jobs:
   build:
     runs-on: windows-2022
     timeout-minutes: 360
-env:
-  MOZCONFIG: ${{ github.workspace }}/stgr/build/mozconfig.windows-x64-release
-  # NOTE: no MOZ_AUTOMATION here. mach on Windows asserts MozillaBuild is
-  # installed (C:\mozilla-build) on every invocation; bootstrap below must
-  # run in a normal context. build_stgr.py sets MOZ_AUTOMATION=1 for the
-  # build/package steps itself (MozillaBuild exists by then).
     steps:
       - uses: actions/checkout@v4
 
@@ -66,7 +62,7 @@ env:
       - name: Install MozillaBuild (Windows mach prerequisite)
         # Firefox's mach asserts C:\mozilla-build exists on every Windows run;
         # unlike Linux/macOS, `mach bootstrap` does NOT install it, so it must
-        # be installed manually first (official Windows build prerequisite).
+        # be installed first (official Windows build prerequisite).
         # Bump the version here when Firefox requires a newer MozillaBuild.
         shell: pwsh
         run: |
