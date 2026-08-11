@@ -14,6 +14,12 @@ import re
 import sys
 from pathlib import Path
 
+# Windows CI pipes stdout as cp1252, which cannot encode the ✅/❌ status
+# glyphs printed below — force UTF-8 so the lint never dies on encoding
+# (Python 3.7+; harmless elsewhere).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent
 PREFS_DIR = ROOT / "stgr" / "config" / "preferences"
 PATCHES_DIR = ROOT / "patches"

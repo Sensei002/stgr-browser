@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+# Python on the Windows runner pipes stdout as cp1252; force UTF-8 mode.
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   benchmark:
     runs-on: windows-2022

@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+# Python on the Windows runner pipes stdout as cp1252; our scripts print
+# non-cp1252 glyphs (✅/❌/—/…) — force UTF-8 mode so builds never die on
+# encoding errors.
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   build:
     runs-on: windows-2022

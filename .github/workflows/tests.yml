@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Python on the Windows runner pipes stdout as cp1252, which cannot encode
+# the ✅/❌ status glyphs our scripts print (UnicodeEncodeError). Force UTF-8.
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   lint:
     name: Lint & validation

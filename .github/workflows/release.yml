@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+# Python on the Windows runner pipes stdout as cp1252; force UTF-8 mode.
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   build:
     name: Build artifacts
