@@ -60,13 +60,13 @@ jobs:
             --title "Rebase onto Firefox ${NEW}" \
             --body "## Firefox update: $OLD -> ${NEW}
 
-$SECURITY
+          $SECURITY
 
-- [ ] Build succeeds
-- [ ] Unit/smoke tests pass
-- [ ] Privacy tests pass
-- [ ] No unresolved patch conflicts
-- [ ] Benchmark sanity check
+          - [ ] Build succeeds
+          - [ ] Unit/smoke tests pass
+          - [ ] Privacy tests pass
+          - [ ] No unresolved patch conflicts
+          - [ ] Benchmark sanity check
 
-> Automatically opened by firefox-update.yml. **Do not merge until CI is green.**" \
+          > Automatically opened by firefox-update.yml. **Do not merge until CI is green.**" \
             || true
