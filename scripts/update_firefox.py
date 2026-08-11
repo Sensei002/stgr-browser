@@ -7,7 +7,10 @@ rebased on it.
 
 Commands:
   check   Compare the pinned upstream version against the latest stable.
-  sync    Clone/fetch the Firefox source into ./firefox at the release branch.
+  sync    Clone/fetch the Firefox source into ./firefox at the pinned release
+          tag (e.g. FIREFOX_153_0_RELEASE) — NOT the moving `release` branch
+          tip. The STGR patch series is validated against the pinned version
+          only; a drifted tip breaks `git apply`.
   update  sync + apply STGR patches (+ build/test when --build/--test) and
           write automation/firefox-<version>/firefox-update-report.md.
   report  Show the last update report summary.
@@ -75,18 +78,26 @@ def latest_stable_firefox(cfg: dict) -> dict:
 
 
 def sync_source(cfg: dict) -> None:
-    """Clone (first time) or update the Firefox source checkout."""
+    """Clone (first time) or update the Firefox source checkout.
+
+    Checks out the PINNED release tag (e.g. FIREFOX_153_0_RELEASE), derived
+    from stgr-config.json's upstream_version + release_tag_pattern. Never the
+    moving `release` branch tip: dot releases (153.0 -> 153.0.5) drift the
+    tree and break `git apply` on the STGR series. This keeps builds
+    deterministic and reproducible (spec \u00a773).
+    """
     repo = cfg["firefox"]["upstream_repository"]
-    branch = cfg["firefox"]["upstream_branch"]
+    tag = cfg["firefox"]["release_tag_pattern"].format(
+        version=cfg["firefox"]["upstream_version"])
     if not (FIREFOX_DIR / ".git").exists():
-        log("sync", f"cloning {repo} branch {branch} (blob:none filter)")
+        log("sync", f"cloning {repo} at {tag} (blob:none filter)")
         run(["git", "clone", "--filter=blob:none", "--single-branch",
-             "--branch", branch, repo, str(FIREFOX_DIR)])
+             "--branch", tag, repo, str(FIREFOX_DIR)])
     else:
-        log("sync", f"fetching origin into {FIREFOX_DIR}")
-        run(["git", "fetch", "--tags", "origin"], cwd=FIREFOX_DIR)
-        run(["git", "checkout", branch], cwd=FIREFOX_DIR)
-        run(["git", "pull", "--ff-only", "origin", branch], cwd=FIREFOX_DIR)
+        log("sync", f"fetching {tag} into {FIREFOX_DIR}")
+        run(["git", "fetch", "--tags", "--force", "origin"], cwd=FIREFOX_DIR)
+        run(["git", "checkout", "--force", tag], cwd=FIREFOX_DIR)
+        run(["git", "reset", "--hard", tag], cwd=FIREFOX_DIR)
     head = run(["git", "rev-parse", "HEAD"], cwd=FIREFOX_DIR, capture=True)
     log("sync", f"firefox HEAD: {head.stdout.strip()}")
 

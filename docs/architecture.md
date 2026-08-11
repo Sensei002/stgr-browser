@@ -7,7 +7,7 @@ wrapper, not a frontend on top of Firefox. All STGR modifications are a thin,
 identifiable layer over the latest stable Firefox source.
 
 ```
-Mozilla Firefox Stable (release branch)
+Mozilla Firefox Stable (pinned release tag, e.g. FIREFOX_153_0_RELEASE)
         ↓  (git, pinned upstream version)
 STGR patch/configuration layer   ← this repository
         ↓
@@ -62,10 +62,12 @@ reproducibility (§72–73).
 ## Update model
 
 `scripts/update_firefox.py` tracks the official repository
-(`github.com/mozilla-firefox/firefox`, `release` branch):
+(`github.com/mozilla-firefox/firefox`):
 
 - `check` — compare pinned upstream against latest stable
-- `sync` — clone/fetch the source
+- `sync` — clone/fetch the source **at the pinned release tag**
+  (`FIREFOX_<version>_RELEASE`, deterministic; never the moving
+  `release` branch tip, so the patch series always applies)
 - `update` — sync → apply patches → (build/test) → `firefox-update-report.md`
 
 A failed patch means: **stop, fix, verify** — never force. Rollback keeps
