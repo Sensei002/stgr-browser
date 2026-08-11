@@ -48,6 +48,7 @@ def run(
     capture: bool = False,
     timeout: int | None = None,
     env: dict | None = None,
+    input: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a command. Raises CalledProcessError on failure when check=True."""
     log("run", " ".join(str(c) for c in cmd))
@@ -58,6 +59,7 @@ def run(
             check=check,
             capture_output=capture,
             text=True,
+            input=input,
             timeout=timeout,
             env=env,
         )

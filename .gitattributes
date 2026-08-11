@@ -1,0 +1,9 @@
+# STGR repo attributes.
+#
+# The STGR patch series is authored and validated with LF line endings.
+# The Firefox upstream tree is always LF (its .gitattributes forces `* -text`),
+# and git apply only matches CRLF patches against CRLF trees. Forcing `eol=lf`
+# here keeps the patches LF on every checkout (Windows core.autocrlf=true
+# would otherwise check them out CRLF and the series would fail to apply).
+*.patch text eol=lf
+patches/series text eol=lf

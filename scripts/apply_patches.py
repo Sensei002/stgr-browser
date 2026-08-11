@@ -34,15 +34,19 @@ def series_list() -> list[str]:
 
 
 def _git(cmd: list, patch: str, check: bool = False):
-    # Deliberately NO `-c core.autocrlf=...` and NO `--recount`:
-    #   - git apply inherits the same autocrlf setting that produced the
-    #     worktree checkout, so LF patches apply cleanly to both CRLF
-    #     (Windows, autocrlf=true) and LF (CI, autocrlf=false) trees.
-    #     Forcing autocrlf=false against a CRLF checkout breaks the apply.
-    #   - --recount mis-parses the known-good hunks in this series
-    #     (verified: 0004 fails with --recount, passes without).
-    return run(["git", "apply", *cmd, str(REPO_ROOT / patch)],
-               cwd=FIREFOX_DIR, check=check, capture=True)
+    # Always feed git apply an LF-normalized patch via stdin (git apply -).
+    #   - The Firefox tree is ALWAYS LF: upstream .gitattributes forces
+    #     `* -text` (no line-ending normalization) on every checkout.
+    #   - This repo has no .gitattributes, so on Windows (core.autocrlf=true)
+    #     the patch files check out CRLF. git apply only matches a CRLF patch
+    #     against a CRLF tree, so a CRLF patch fails on the LF Firefox tree
+    #     ("patch does not apply"). LF patches apply cleanly to BOTH LF and
+    #     CRLF trees (verified via an apply matrix).
+    #   - Deliberately NO `--recount`: it mis-parses the known-good hunks in
+    #     this series (verified: 0004 fails with --recount, passes without).
+    data = (REPO_ROOT / patch).read_text(encoding="utf-8").replace("\r\n", "\n")
+    return run(["git", "apply", *cmd, "-"], cwd=FIREFOX_DIR,
+               check=check, capture=True, input=data)
 
 
 def check_series(apply: bool) -> list[dict]:
