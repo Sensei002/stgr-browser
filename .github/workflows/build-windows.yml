@@ -24,9 +24,12 @@ jobs:
   build:
     runs-on: windows-2022
     timeout-minutes: 360
-    env:
-      MOZCONFIG: ${{ github.workspace }}/stgr/build/mozconfig.windows-x64-release
-      MOZ_AUTOMATION: "1"
+env:
+  MOZCONFIG: ${{ github.workspace }}/stgr/build/mozconfig.windows-x64-release
+  # NOTE: no MOZ_AUTOMATION here. mach on Windows asserts MozillaBuild is
+  # installed (C:\mozilla-build) on every invocation; bootstrap below must
+  # run in a normal context. build_stgr.py sets MOZ_AUTOMATION=1 for the
+  # build/package steps itself (MozillaBuild exists by then).
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +62,23 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('firefox/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
+
+      - name: Install MozillaBuild (Windows mach prerequisite)
+        # Firefox's mach asserts C:\mozilla-build exists on every Windows run;
+        # unlike Linux/macOS, `mach bootstrap` does NOT install it, so it must
+        # be installed manually first (official Windows build prerequisite).
+        # Bump the version here when Firefox requires a newer MozillaBuild.
+        shell: pwsh
+        run: |
+          $ver = "4.2.1"
+          $setup = "$env:RUNNER_TEMP\MozillaBuildSetup-$ver.exe"
+          if (-not (Test-Path $setup)) {
+            Invoke-WebRequest -Uri "https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-$ver.exe" -OutFile $setup
+          }
+          Write-Host "Installing MozillaBuild $ver silently..."
+          Start-Process -FilePath $setup -ArgumentList "/S" -Wait
+          if (-not (Test-Path "C:\mozilla-build")) { throw "MozillaBuild install failed: C:\mozilla-build missing" }
+          Write-Host "MozillaBuild installed at C:\mozilla-build"
 
       - name: Bootstrap build tooling
         shell: bash
