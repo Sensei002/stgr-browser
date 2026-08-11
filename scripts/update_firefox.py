@@ -91,6 +91,9 @@ def sync_source(cfg: dict) -> None:
     # underscores, not dots (dotted "FIREFOX_153.0_RELEASE" does not exist).
     tag = cfg["firefox"]["release_tag_pattern"].format(
         version=cfg["firefox"]["upstream_version"].replace(".", "_"))
+    # Invalidate patch state before any fetch/checkout/reset. If sync fails,
+    # a stale marker must never make a later build skip patching.
+    (FIREFOX_DIR / ".stgr-patched").unlink(missing_ok=True)
     if not (FIREFOX_DIR / ".git").exists():
         log("sync", f"cloning {repo} at {tag} (blob:none filter)")
         run(["git", "clone", "--filter=blob:none", "--single-branch",

@@ -13,6 +13,8 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -22,6 +24,92 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import FIREFOX_DIR, REPO_ROOT, log, run  # noqa: E402
 
 SERIES = REPO_ROOT / "patches" / "series"
+PATCH_MARKER = FIREFOX_DIR / ".stgr-patched"
+
+
+def _clear_patch_marker() -> None:
+    """Invalidate the marker before a new patch transaction starts."""
+    PATCH_MARKER.unlink(missing_ok=True)
+
+
+def _series_digest(patches: list[str] | None = None) -> str:
+    """Hash the ordered patch list and exact normalized patch contents."""
+    digest = hashlib.sha256()
+    for patch in patches if patches is not None else series_list():
+        digest.update(patch.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update((REPO_ROOT / patch).read_bytes().replace(b"\r\n", b"\n"))
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
+def _patch_paths(patches: list[str]) -> list[str]:
+    """Return all repository-relative files touched by an ordered series."""
+    paths = set()
+    for patch in patches:
+        for line in (REPO_ROOT / patch).read_text(encoding="utf-8").splitlines():
+            if not (line.startswith("--- ") or line.startswith("+++ ")):
+                continue
+            path = line[4:].split("\\t", 1)[0]
+            if path == "/dev/null":
+                continue
+            if path.startswith("a/") or path.startswith("b/"):
+                path = path[2:]
+            paths.add(path)
+    return sorted(paths)
+
+
+def _file_hashes(patches: list[str] | None = None) -> dict[str, str | None]:
+    """Hash the final bytes of every file touched by the patch series."""
+    hashes = {}
+    for rel in _patch_paths(patches if patches is not None else series_list()):
+        path = FIREFOX_DIR / rel
+        if not path.is_file():
+            hashes[rel] = None
+            continue
+        hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashes
+
+
+def _firefox_revision() -> str | None:
+    """Return the upstream Firefox HEAD, or None if the checkout is invalid."""
+    try:
+        result = run(["git", "rev-parse", "HEAD"], cwd=FIREFOX_DIR,
+                     check=False, capture=True)
+    except OSError:
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _write_patch_marker(patches: list[str]) -> None:
+    """Record the exact upstream tree and patch series that were applied."""
+    revision = _firefox_revision()
+    if revision is None:
+        raise RuntimeError("cannot write patch marker: Firefox HEAD is unavailable")
+    try:
+        PATCH_MARKER.write_text(
+            json.dumps({
+                "firefox_revision": revision,
+                "patch_series_sha256": _series_digest(patches),
+                "file_hashes": _file_hashes(patches),
+            }, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise RuntimeError(f"cannot write patch marker: {exc}") from exc
+
+
+def marker_is_valid() -> bool:
+    """Return whether metadata and every patch still match the worktree."""
+    try:
+        marker = json.loads(PATCH_MARKER.read_text(encoding="utf-8"))
+        if (marker.get("firefox_revision") != _firefox_revision()
+                or marker.get("patch_series_sha256") != _series_digest()
+                or marker.get("file_hashes") != _file_hashes()):
+            return False
+        return True
+    except (FileNotFoundError, OSError, json.JSONDecodeError, RuntimeError):
+        return False
 
 
 def series_list() -> list[str]:
@@ -67,7 +155,14 @@ def check_series(apply: bool) -> list[dict]:
     Hunk counts in this series are machine-verified; see patches/README.md.
     """
     results = []
-    for patch in series_list():
+    patches = series_list()
+    if apply:
+        # A sync/reset may have changed the Firefox tree, so never trust a
+        # marker from an earlier checkout. The marker is recreated only after
+        # every patch in this run succeeds.
+        _clear_patch_marker()
+
+    for patch in patches:
         base = []
         if not apply:
             base.append("--check")
@@ -85,6 +180,10 @@ def check_series(apply: bool) -> list[dict]:
             if apply:
                 log("patch", "stopping: do not force-fix conflicting patches")
                 break
+
+    if apply and len(results) == len(patches) and all(r["ok"] for r in results):
+        _write_patch_marker(patches)
+        log("patch", f"marker written: {PATCH_MARKER}")
     return results
 
 

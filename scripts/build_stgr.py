@@ -205,8 +205,9 @@ def mach(cfg: dict, *args: str, check: bool = True):
 def cmd_build(cfg: dict) -> int:
     if not (FIREFOX_DIR / "mach").exists():
         raise SystemExit("no mach in ./firefox — sync + bootstrap first")
-    if not (FIREFOX_DIR / ".stgr-patched").exists():
-        log("build", "tree not patched — running apply_patches")
+    from apply_patches import marker_is_valid
+    if not marker_is_valid():
+        log("build", "tree not patched or marker stale — running apply_patches")
         run([sys.executable, "scripts/apply_patches.py", "apply"])
     cmd_prepare(cfg)
     cmd_verify_prefs_sync(cfg)
