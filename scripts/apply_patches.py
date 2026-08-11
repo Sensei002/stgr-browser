@@ -37,16 +37,20 @@ def _git(cmd: list, patch: str, check: bool = False):
     # Always feed git apply an LF-normalized patch via stdin (git apply -).
     #   - The Firefox tree is ALWAYS LF: upstream .gitattributes forces
     #     `* -text` (no line-ending normalization) on every checkout.
-    #   - This repo has no .gitattributes, so on Windows (core.autocrlf=true)
-    #     the patch files check out CRLF. git apply only matches a CRLF patch
-    #     against a CRLF tree, so a CRLF patch fails on the LF Firefox tree
+    #   - git apply only matches a CRLF patch against a CRLF tree, so a patch
+    #     file checked out CRLF would fail against the LF Firefox tree
     #     ("patch does not apply"). LF patches apply cleanly to BOTH LF and
-    #     CRLF trees (verified via an apply matrix).
+    #     CRLF trees (verified via an apply matrix). This stdin normalization
+    #     is the primary guarantee; the repo .gitattributes (eol=lf for *.patch)
+    #     is defense-in-depth for anything that applies the files by path.
+    #   - encoding="utf-8" so the non-ASCII patch content (e.g. \u9053\u5834 in the
+    #     new-tab patch) survives even on a cp1252 Windows console without
+    #     PYTHONUTF8.
     #   - Deliberately NO `--recount`: it mis-parses the known-good hunks in
     #     this series (verified: 0004 fails with --recount, passes without).
     data = (REPO_ROOT / patch).read_text(encoding="utf-8").replace("\r\n", "\n")
     return run(["git", "apply", *cmd, "-"], cwd=FIREFOX_DIR,
-               check=check, capture=True, input=data)
+               check=check, capture=True, input=data, encoding="utf-8")
 
 
 def check_series(apply: bool) -> list[dict]:

@@ -49,8 +49,13 @@ def run(
     timeout: int | None = None,
     env: dict | None = None,
     input: str | None = None,
+    encoding: str | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run a command. Raises CalledProcessError on failure when check=True."""
+    """Run a command. Raises CalledProcessError on failure when check=True.
+
+    encoding: pass "utf-8" to make stdin/stdout text handling independent of
+    the locale (text=True would otherwise use cp1252 on Windows consoles).
+    """
     log("run", " ".join(str(c) for c in cmd))
     try:
         return subprocess.run(
@@ -60,6 +65,7 @@ def run(
             capture_output=capture,
             text=True,
             input=input,
+            encoding=encoding,
             timeout=timeout,
             env=env,
         )
