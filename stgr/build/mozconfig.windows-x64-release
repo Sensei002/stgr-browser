@@ -19,6 +19,11 @@ ac_add_options --enable-release
 ac_add_options --enable-optimize
 ac_add_options --enable-lto
 
+# GitHub's Windows runners can exhaust their paging file when ThinLTO starts
+# too many clang-cl jobs concurrently. Keep LTO enabled, but cap the make
+# scheduler at two concurrent compile/link tasks for a reliable release build.
+mk_add_options MOZ_MAKE_FLAGS="-j2"
+
 # Faster CI/local rebuilds via sccache (cache is keyed by compiler inputs,
 # correctness-neutral). Remove if sccache is not installed.
 ac_add_options --with-ccache=sccache
