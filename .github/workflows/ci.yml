@@ -31,9 +31,8 @@ jobs:
     name: Build artifacts
     runs-on: windows-2022
     timeout-minutes: 360
-    env:
-      # sccache writes here so the actions/cache step actually persists it.
-      SCCACHE_DIR: ${{ runner.temp }}/sccache
+    # NOTE: SCCACHE_DIR is set per-step below (runner.temp is not available in
+    # job-level env), so sccache writes to the same dir the cache step stores.
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -152,10 +151,14 @@ jobs:
 
       - name: Build
         shell: bash
+        env:
+          SCCACHE_DIR: ${{ runner.temp }}/sccache
         run: python scripts/build_stgr.py build
 
       - name: Package (installer + portable + checksums + manifest)
         shell: bash
+        env:
+          SCCACHE_DIR: ${{ runner.temp }}/sccache
         run: python scripts/build_stgr.py package
 
       - name: Upload artifacts
