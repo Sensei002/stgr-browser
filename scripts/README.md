@@ -11,6 +11,7 @@ Stdlib-only Python. No pip installs required for the core tooling (optional
 | `apply_patches.py` | `check` / `apply` / `status` for `patches/series`. Stops on conflict — conflicts are release-blocking |
 | `build_stgr.py` | `prepare` (stage UI/branding/uBlock into the tree) · `build` · `package` (installer + SHA256SUMS + build-manifest.json) · `verify-prefs-sync` · `substitute` |
 | `make_icons.py` | Generate the icon set + `stgr.ico` from `stgr/branding/stgr-logo.png` (needs Pillow); `--generate-placeholder` for pipeline testing |
+| `make_installer_assets.py` | Generate STGR-owned NSIS BMP/JPEG artwork and stage the `firefox64.ico` alias using only the Python standard library |
 | `fetch_ublock.py` | Download the official Mozilla-signed uBlock Origin XPI; records/verifies SHA256 (supply-chain tripwire) |
 | `check_update.py` | CLI updater — validates product/version/arch/hash against GitHub Releases; `--download` fetches the installer. Exit codes feed CI |
 | `smoke_test.py` | Launch → branding in title → tabs → settings → profile persistence across restart |

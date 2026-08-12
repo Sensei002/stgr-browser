@@ -32,8 +32,9 @@ ac_add_options --with-ccache=sccache
 ac_add_options --disable-tests
 
 # STGR branding is staged by build_stgr.py into this in-tree directory before
-# configure. mozbuild rejects --with-branding paths outside topsrcdir.
-ac_add_options --with-branding=$topsrcdir/browser/branding/stgr
+# configure. Keep this path relative: Firefox's Windows installer makefiles
+# prepend $topsrcdir when resolving MOZ_BRANDING_DIRECTORY.
+ac_add_options --with-branding=browser/branding/stgr
 
 # ── Profile-guided optimization ──────────────────────────────
 # PGO is OFF by default (expensive on CI). To enable, uncomment and

@@ -122,8 +122,14 @@ def cmd_prepare(cfg: dict) -> int:
     #    repository copy as the source of truth and stage a clean build copy
     #    into browser/branding/stgr before mach configures the tree.
     BRAND_DST.mkdir(parents=True, exist_ok=True)
-    for name in ("configure.sh", "moz.build", "brand.dtd", "brand.ftl", "brand.properties"):
+    for name in ("configure.sh", "moz.build", "branding.nsi",
+                 "brand.dtd", "brand.ftl", "brand.properties"):
         shutil.copy2(BRAND_SRC / name, BRAND_DST / name)
+    stub_src = BRAND_SRC / "stubinstaller"
+    stub_dst = BRAND_DST / "stubinstaller"
+    stub_dst.mkdir(parents=True, exist_ok=True)
+    for name in ("installing_page.css", "profile_cleanup_page.css"):
+        shutil.copy2(stub_src / name, stub_dst / name)
 
     # Icons are generated from the master logo. Copy unconditionally so a
     # regenerated set always replaces stale files in the in-tree branding dir.
@@ -139,6 +145,8 @@ def cmd_prepare(cfg: dict) -> int:
             shutil.copy2(png, target)
         else:
             target.unlink(missing_ok=True)
+    run([sys.executable, "scripts/make_installer_assets.py",
+         "--output", str(BRAND_DST), "--icon", str(icon_dir / "stgr.ico")])
     log("prepare", "branding staged in firefox/browser/branding/stgr")
 
     # 3. uBlock Origin XPI (official signed build) into distribution/.

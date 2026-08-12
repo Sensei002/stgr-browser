@@ -1,0 +1,8 @@
+/* STGR Browser installer styling. */
+html, body {
+  background: #080808;
+  color: #f2f2f2;
+  font-family: "Segoe UI", sans-serif;
+}
+a { color: #e8202a; }
+.progress, progress { accent-color: #e8202a; }
