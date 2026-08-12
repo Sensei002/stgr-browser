@@ -23,8 +23,9 @@ ac_add_options --enable-lto
 # correctness-neutral). Remove if sccache is not installed.
 ac_add_options --with-ccache=sccache
 
-# Windows installer (NSIS setup.exe) for release packages.
-ac_add_options --enable-installer
+# The Windows installer is generated during the packaging stage with
+# `mach package` and the installer build target; recent Firefox releases do
+# not expose an --enable-installer configure option.
 
 # Tests are compiled in a separate CI configuration; the release binary
 # stays lean. (xpcshell/mochitest need a tests-enabled build — see docs.)
