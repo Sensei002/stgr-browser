@@ -50,7 +50,9 @@ python scripts/privacy_test.py --binary firefox/obj-*/dist/bin/firefox.exe
 
 `stgr/build/mozconfig.windows-x64-release` is the single release
 configuration: release mode, `-O2` + LTO, sccache, NSIS installer, tests
-disabled, `--with-branding` pointing at the STGR branding directory.
+disabled, and `--with-branding` pointing at the in-tree staged STGR branding
+directory (`firefox/browser/branding/stgr`). The repository source remains in
+`stgr/build/branding` and is copied during `build_stgr.py prepare`.
 
 Point `MOZCONFIG` at it (or let `build_stgr.py` do it):
 

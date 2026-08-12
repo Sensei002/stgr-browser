@@ -3,7 +3,7 @@
 | File | Purpose |
 |---|---|
 | `mozconfig.windows-x64-release` | The single Windows x64 release build configuration |
-| `branding/` | `--with-branding` directory (name, icons, app identity) |
+| `branding/` | Repository branding source staged into Firefox's in-tree `browser/branding/stgr` directory |
 | `build-manifest.template.json` | Provenance template for `build-manifest.json` |
 
 ## Build invariants

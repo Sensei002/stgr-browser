@@ -1,0 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# STGR keeps the branding source outside the Firefox checkout. The build
+# orchestrator stages this file and the assets into browser/branding/stgr.
+FINAL_TARGET_FILES += [
+    "brand.dtd",
+    "brand.ftl",
+    "brand.properties",
+]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+    FINAL_TARGET_FILES += [
+        "firefox.ico",
+        "default16.png",
+        "default32.png",
+        "default48.png",
+        "default64.png",
+        "default128.png",
+        "default256.png",
+        "default512.png",
+    ]

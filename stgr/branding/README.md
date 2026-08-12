@@ -43,7 +43,8 @@ Branding is applied through:
 
 1. `stgr/config/stgr-config.json` + `stgr/branding/brand.json` — single sources of truth.
 2. `patches/0001-stgr-branding.patch` — replaces Firefox branding files at build time.
-3. `stgr/build/branding/` — the branding directory contents referenced by the mozconfig.
+3. `stgr/build/branding/` — the branding source copied into Firefox's in-tree
+   `browser/branding/stgr` directory before configure.
 
 ## Colors
 

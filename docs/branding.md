@@ -51,7 +51,8 @@ Executable resources.
 Applied through:
 
 1. `stgr/config/stgr-config.json` + `stgr/branding/brand.json` (sources of truth)
-2. `stgr/build/branding/` (the `--with-branding` directory)
+2. `stgr/build/branding/` (the branding source staged into Firefox's
+   in-tree `browser/branding/stgr` directory for `--with-branding`)
 3. `patches/0001-stgr-branding.patch` (hardcoded chrome strings + attribution)
 4. `patches/0003` / `patches/0005` (About page, chrome styling)
 

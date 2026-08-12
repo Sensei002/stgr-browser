@@ -35,6 +35,7 @@ from lint_prefs_sync import extract_blocks  # noqa: E402
 UI_SRC = REPO_ROOT / "stgr" / "ui"
 UI_DST = FIREFOX_DIR / "browser" / "components" / "stgr"
 BRAND_SRC = REPO_ROOT / "stgr" / "build" / "branding"
+BRAND_DST = FIREFOX_DIR / "browser" / "branding" / "stgr"
 UBLOCK_SRC = REPO_ROOT / "stgr" / "extensions" / "ublock-origin"
 
 PLACEHOLDERS = {
@@ -116,19 +117,29 @@ def cmd_prepare(cfg: dict) -> int:
         shutil.copy2(logo_src, logo_dst)
         log("prepare", "staged branding/stgr-logo.svg")
 
-    # 2. Branding directory (icons generated from the master logo).
-    #    Copy unconditionally so a regenerated set always replaces stale
-    #    icons in the branding dir (a conditional .ico copy could linger).
+    # 2. Branding directory. Firefox's mozbuild sandbox requires the
+    #    --with-branding directory to be inside topsrcdir, so keep the
+    #    repository copy as the source of truth and stage a clean build copy
+    #    into browser/branding/stgr before mach configures the tree.
+    BRAND_DST.mkdir(parents=True, exist_ok=True)
+    for name in ("configure.sh", "moz.build", "brand.dtd", "brand.ftl", "brand.properties"):
+        shutil.copy2(BRAND_SRC / name, BRAND_DST / name)
+
+    # Icons are generated from the master logo. Copy unconditionally so a
+    # regenerated set always replaces stale files in the in-tree branding dir.
     icon_dir = REPO_ROOT / "stgr" / "branding" / "icons"
     if not (icon_dir / "stgr.ico").exists():
         log("prepare", "no icons yet — running make_icons")
         run([sys.executable, "scripts/make_icons.py"])
-    shutil.copy2(icon_dir / "stgr.ico", BRAND_SRC / "firefox.ico")
+    shutil.copy2(icon_dir / "stgr.ico", BRAND_DST / "firefox.ico")
     for size in (16, 32, 48, 64, 128, 256, 512):
         png = icon_dir / f"icon-{size}.png"
+        target = BRAND_DST / f"default{size}.png"
         if png.exists():
-            shutil.copy2(png, BRAND_SRC / f"default{size}.png")
-    log("prepare", "branding staged")
+            shutil.copy2(png, target)
+        else:
+            target.unlink(missing_ok=True)
+    log("prepare", "branding staged in firefox/browser/branding/stgr")
 
     # 3. uBlock Origin XPI (official signed build) into distribution/.
     xpi = UBLOCK_SRC / f"uBlock0_{cfg['ublock']['version']}.firefox.signed.xpi"

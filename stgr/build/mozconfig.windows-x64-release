@@ -31,9 +31,9 @@ ac_add_options --with-ccache=sccache
 # stays lean. (xpcshell/mochitest need a tests-enabled build — see docs.)
 ac_add_options --disable-tests
 
-# STGR branding directory (outside the Firefox tree, at the repo root).
-# `--with-branding` supplies name/icon/version metadata to the build.
-ac_add_options --with-branding=$topsrcdir/../stgr/build/branding
+# STGR branding is staged by build_stgr.py into this in-tree directory before
+# configure. mozbuild rejects --with-branding paths outside topsrcdir.
+ac_add_options --with-branding=$topsrcdir/browser/branding/stgr
 
 # ── Profile-guided optimization ──────────────────────────────
 # PGO is OFF by default (expensive on CI). To enable, uncomment and

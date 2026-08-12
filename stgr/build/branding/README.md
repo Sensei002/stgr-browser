@@ -1,8 +1,9 @@
 # STGR Build Branding Directory
 
-This directory is what `--with-branding` points at (see
-`stgr/build/mozconfig.windows-x64-release`). Firefox's branding machinery reads
-the product name, version metadata, and icons from here.
+This directory is the repository source for the STGR branding files. Before
+configure, `scripts/build_stgr.py prepare` copies these files and generated
+icons into `firefox/browser/branding/stgr`, the in-tree directory passed to
+`--with-branding`. Firefox's branding machinery reads the staged copy.
 
 ## Contents
 
@@ -10,6 +11,7 @@ the product name, version metadata, and icons from here.
 |---|---|
 | `brand.ftl` / `brand.dtd` / `brand.properties` | Product name strings |
 | `configure.sh` | Product display name consumed by Firefox's branding configure contract |
+| `moz.build` | Registers the staged branding resources with Firefox's build system |
 | `firefox.ico` + `default{16,32,48,64,128,256,512}.png` | Application icons — **generated** by `scripts/make_icons.py` from the master logo (`stgr/branding/stgr-logo.png`), staged by `build_stgr.py prepare` |
 
 The icon files are derived assets and are **not** committed — they are produced
