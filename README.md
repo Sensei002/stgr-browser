@@ -36,7 +36,7 @@ stgr-browser/
 ├── benchmark/          ← Benchmark harness config and baselines
 ├── docs/               ← Architecture, building, privacy, performance, releases, ...
 ├── automation/         ← Per-update working areas created by update_firefox.py
-└── .github/workflows/  ← CI/CD (build, tests, release, firefox-update, security, performance)
+└── .github/workflows/  ← CI/CD (single workflow: build → auto tag → release)
 ```
 
 Read [`docs/architecture.md`](docs/architecture.md) for the full picture.
@@ -64,7 +64,7 @@ python scripts/build_stgr.py package
 ```
 
 > Building Firefox from source is heavy: ~40 GB disk, 8 GB+ RAM, and a multi-hour build on the first
-> run. CI performs the same steps in `.github/workflows/build-windows.yml`.
+> run. CI performs the same steps in `.github/workflows/ci.yml`.
 
 ## Releases
 

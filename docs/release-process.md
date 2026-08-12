@@ -63,7 +63,7 @@ auto-downgraded.
 - Architecture is in place (`ci.yml` signs when secrets exist).
 - Certificate stored **only** in GitHub Secrets (`WINDOWS_SIGNING_CERT_BASE64`
   + `WINDOWS_SIGNING_CERT_PASSWORD`) or a secure signing service — never in
-  Git; `security.yml` scans for `.pfx`/`.p12`/`.key` in tree and history.
+  Git; keep `.pfx`/`.p12`/`.key` out of the tree and history.
 - Without a certificate, releases are unsigned and SHA256-published.
   Unsigned builds may trigger Windows SmartScreen warnings — documented for
   users in the release notes.

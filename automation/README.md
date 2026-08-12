@@ -17,4 +17,4 @@ Rules:
   `LAST_KNOWN_GOOD_STGR` are recorded in `.stgr/state.json`; never auto-
   downgrade installed users.
 - Working directories are gitignored — the *reports* you care about are
-  attached to the update PR by `firefox-update.yml`.
+  written by `update_firefox.py update` (see `docs/firefox-updates.md`).

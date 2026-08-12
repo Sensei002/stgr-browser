@@ -24,9 +24,10 @@ repository: `https://github.com/mozilla-firefox/firefox`.
 5. Build + test + benchmark, then release. **No release with unresolved
    conflicts.**
 
-`firefox-update.yml` runs this weekly and opens a PR (never auto-merged; CI
-must pass). Security patch releases (same major.minor, bumped patch) are
-marked **SECURITY UPDATE** and prioritized.
+Run `python scripts/update_firefox.py update` to perform steps 1–4 and open
+the update PR manually (never auto-merged; CI must pass). Security patch
+releases (same major.minor, bumped patch) are marked **SECURITY UPDATE** and
+prioritized.
 
 ## Rebase etiquette
 

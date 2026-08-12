@@ -43,9 +43,15 @@ Regression gates (stgr-config.json → `benchmark.thresholds`):
 - idle memory regression > 20%
 - 10-tab memory regression > 20%
 
-`performance.yml` runs the harness on releases and compares against
-`benchmark/baselines/win64.json` (replace the placeholder with a real baseline
-after the first stable release — **no fabricated data**).
+Run the harness manually against `benchmark/baselines/win64.json`:
+
+```bash
+python scripts/benchmark/benchmark.py \
+  --binary <path-to>/stgr.exe --compare benchmark/baselines/win64.json --runs 3
+```
+
+(replace the placeholder baseline with real measurements after the first
+stable release — **no fabricated data**).
 
 ## Profile-Guided Optimization
 

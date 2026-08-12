@@ -28,7 +28,7 @@ after patching. If they drift, CI fails.
 1. Edit the file here.
 2. Update the corresponding patch in `patches/` (the injected block).
 3. Run `python scripts/build_stgr.py --verify-prefs-sync` locally (needs a synced `firefox/` tree)
-   or rely on CI (`tests.yml` runs the same check).
+   or rely on the build pipeline (`build_stgr.py build` runs the same check).
 
 ## Configuration contract
 
