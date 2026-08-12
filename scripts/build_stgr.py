@@ -24,6 +24,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -257,16 +258,33 @@ def cmd_package(cfg: dict) -> int:
     releases.mkdir(exist_ok=True)
     prefix = f"STGR-Browser-{version}-Win64"
 
-    installer_candidates = list(dist.glob("*.exe")) + \
-        list(dist.glob("installer/*.exe"))
-    setup = None
-    for cand in installer_candidates:
-        if "setup" in cand.name.lower() or cand.name.endswith(".exe"):
-            setup = cand
-            break
+    installer_candidates = (list(dist.glob("*.exe"))
+                            + list(dist.glob("installer/*.exe"))
+                            + list(dist.glob("install/sea/*.exe"))
+                            + list(dist.glob("install/**/*.exe")))
+    setup = next((c for c in installer_candidates
+                  if "setup" in c.name.lower()), None)
     if setup:
         shutil.copy2(setup, releases / f"{prefix}-Setup.exe")
         log("package", f"installer -> releases/{prefix}-Setup.exe")
+    elif cfg["build"].get("installer"):
+        log("package", "WARNING: no installer .exe found in obj dist — "
+                        "the release will lack a Setup.exe")
+
+    if cfg["build"].get("portable_archive"):
+        app_dir = dist / "firefox"
+        if not app_dir.is_dir():
+            app_dir = dist / "bin"
+        if app_dir.is_dir():
+            zip_path = releases / f"{prefix}.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in sorted(app_dir.rglob("*")):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(app_dir))
+            log("package", f"portable -> releases/{prefix}.zip")
+        else:
+            log("package", "WARNING: packaged app dir not found — "
+                            "portable archive skipped")
 
     from generate_checksums import write_checksums
     write_checksums(releases, releases / cfg["release"]["checksums"])

@@ -1,0 +1,258 @@
+name: CI/CD
+
+# Single pipeline: push to main (or manual dispatch) -> build the browser ->
+# package installer/portable archive -> auto version bump -> tag -> publish a
+# GitHub Release with the .exe attached. No separate release workflow and no
+# manual tag push required.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# The release stage pushes a version-bump commit and creates tags/releases,
+# so this workflow needs write access to the repository.
+permissions:
+  contents: write
+
+# Only one release pipeline runs at a time; a newer push supersedes an older
+# run so two runs can never race on the same version bump / tag.
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+  MOZCONFIG: ${{ github.workspace }}/stgr/build/mozconfig.windows-x64-release
+  # Firefox 153's automation OOM hook supports Rust versions before 1.97.
+  STGR_RUST_TOOLCHAIN: "1.96.0"
+
+jobs:
+  build:
+    name: Build artifacts
+    runs-on: windows-2022
+    timeout-minutes: 360
+    env:
+      # sccache writes here so the actions/cache step actually persists it.
+      SCCACHE_DIR: ${{ runner.temp }}/sccache
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags are needed for the version bump
+
+      - name: Auto version bump
+        id: version
+        shell: bash
+        run: |
+          VER=$(python scripts/next_version.py --write)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "This build will be released as STGR Browser v$VER"
+
+      - name: Enlarge Windows pagefile (no reboot needed)
+        # The 7 GB runner RAM + default pagefile cannot feed concurrent
+        # clang-cl ThinLTO or rustc (gkrust): ERROR_COMMITMENT_LIMIT (0x5AF).
+        # Windows activates a pagefile on a volume that had none immediately,
+        # so add one on the temp D: drive. Fail fast here (before the
+        # multi-hour build) if it does not activate.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          try {
+            Get-CimInstance Win32_ComputerSystem |
+              Set-CimInstance -Property @{ AutomaticManagedPagefile = $false }
+            New-CimInstance -ClassName Win32_PageFileSetting -ErrorAction Stop `
+              -Property @{ Name = "D:\pagefile.sys"; InitialSize = 8192; MaximumSize = 24576 }
+            Write-Host "Configured D:\pagefile.sys (8-24 GB)"
+          } catch {
+            Write-Warning "Pagefile setup failed: $($_.Exception.Message)"
+          }
+          $active = $null
+          for ($i = 0; $i -lt 6 -and -not $active; $i++) {
+            Start-Sleep -Seconds 5
+            $active = Get-CimInstance Win32_PageFileUsage |
+              Where-Object { $_.Name -match '^D:' -and $_.AllocatedBaseSize -gt 0 }
+          }
+          Get-CimInstance Win32_PageFileUsage | Format-Table -AutoSize
+          if (-not $active) {
+            throw "D: pagefile did not activate - the ThinLTO build would run out of memory. Fix the pagefile step before rebuilding."
+          }
+          Write-Host "D: pagefile active ($($active.AllocatedBaseSize) MB allocated)"
+
+      - name: Cache Firefox source (git objects)
+        uses: actions/cache@v4
+        with:
+          path: firefox/.git
+          key: firefox-git-${{ runner.os }}
+          restore-keys: |
+            firefox-git-${{ runner.os }}-
+
+      - name: Sync Firefox Stable source
+        shell: bash
+        run: python scripts/update_firefox.py sync
+
+      - name: Cache sccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: sccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('firefox/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install MozillaBuild (Windows mach prerequisite)
+        # Firefox's mach asserts C:\mozilla-build exists on every Windows run;
+        # `mach bootstrap` does NOT install it, so install it explicitly
+        # (official Windows build prerequisite).
+        shell: pwsh
+        run: |
+          $ver = "4.2.1"
+          $setup = "$env:RUNNER_TEMP\MozillaBuildSetup-$ver.exe"
+          if (-not (Test-Path $setup)) {
+            Invoke-WebRequest -Uri "https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-$ver.exe" -OutFile $setup
+          }
+          Write-Host "Installing MozillaBuild $ver silently..."
+          Start-Process -FilePath $setup -ArgumentList "/S" -Wait
+          if (-not (Test-Path "C:\mozilla-build")) { throw "MozillaBuild install failed: C:\mozilla-build missing" }
+          Write-Host "MozillaBuild installed at C:\mozilla-build"
+
+      - name: Bootstrap build tooling
+        shell: bash
+        run: |
+          cd firefox
+          python mach bootstrap --no-interactive --application-choice=browser \
+            || python mach bootstrap --application-choice=browser
+
+      - name: Pin Firefox-compatible Rust toolchain
+        # mach bootstrap can select the runner's newest stable Rust. Firefox
+        # 153 rejects 1.97.x in automation mode while building mozglue-static,
+        # so install and persist the last known-compatible stable toolchain.
+        shell: pwsh
+        run: |
+          $version = $env:STGR_RUST_TOOLCHAIN
+          rustup toolchain install $version --profile minimal --no-self-update
+          rustup component add rustfmt --toolchain $version
+          rustup default $version
+          "RUSTUP_TOOLCHAIN=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          rustc --version
+          cargo --version
+
+      - name: Apply STGR patches
+        shell: bash
+        run: python scripts/apply_patches.py apply
+
+      - name: Build
+        shell: bash
+        run: python scripts/build_stgr.py build
+
+      - name: Package (installer + portable + checksums + manifest)
+        shell: bash
+        run: python scripts/build_stgr.py package
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-win64
+          path: |
+            releases/*.exe
+            releases/*.zip
+            releases/SHA256SUMS.txt
+            releases/build-manifest.json
+          retention-days: 14
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags for notes/version
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stgr-win64
+          path: release-assets
+
+      - name: Sign artifacts (when a certificate secret is configured)
+        shell: bash
+        env:
+          WIN_CERT_B64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WIN_CERT_PASS: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if [ -z "$WIN_CERT_B64" ]; then
+            echo "::warning::No signing certificate configured - publishing unsigned. Users may see SmartScreen warnings (see docs/release-process.md)."
+            exit 0
+          fi
+          echo "$WIN_CERT_B64" | base64 -d > /tmp/stgr-cert.pfx
+          # signtool ships with the Windows SDK on this runner.
+          SIGTOOL=$(find "/c/Program Files (x86)/Windows Kits/10/bin" -name signtool.exe | sort | tail -1)
+          "$SIGTOOL" sign /f /tmp/stgr-cert.pfx /p "$WIN_CERT_PASS" \
+            /fd sha256 /tr http://timestamp.digicert.com /td sha256 \
+            release-assets/*.exe
+          rm -f /tmp/stgr-cert.pfx
+
+      - name: Recompute checksums after signing
+        shell: bash
+        run: python scripts/generate_checksums.py release-assets
+
+      - name: Auto tag + publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
+          TAG="v${VERSION}"
+
+          echo "=== release artifacts ==="
+          ls -la release-assets/
+          if [ -z "$(ls release-assets/*-Win64-Setup.exe 2>/dev/null || true)" ]; then
+            echo "::error::Setup.exe missing - the package stage produced no installer"
+            exit 1
+          fi
+          if [ -z "$(ls release-assets/*-Win64.zip 2>/dev/null || true)" ]; then
+            echo "::error::portable ZIP missing - the package stage produced no archive"
+            exit 1
+          fi
+
+          # Keep the repo's config version in sync with the release. The
+          # [skip ci] trailer prevents this commit from retriggering CI/CD.
+          python scripts/next_version.py --write
+          if ! git diff --quiet stgr/config/stgr-config.json; then
+            git config user.name "STGR Bot"
+            git config user.email "bot@steigerdojo.invalid"
+            git add stgr/config/stgr-config.json
+            git commit -m "chore: bump version to ${VERSION} [skip ci]"
+            git push origin HEAD:main
+          fi
+          # Tag HEAD (the config-bump commit when one was made) so the tagged
+          # source matches the released version exactly.
+          TARGET="$(git rev-parse HEAD)"
+
+          # Clear a stale tag/release left by a previously failed run.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+            echo "Removed stale release/tag ${TAG} from a previous failed run"
+          fi
+
+          NOTES="$(python scripts/release_notes.py "$VERSION" 2>/dev/null || echo 'STGR Browser release.')"
+          gh release create "$TAG" \
+            release-assets/STGR-Browser-*-Win64-Setup.exe \
+            release-assets/STGR-Browser-*-Win64.zip \
+            release-assets/SHA256SUMS.txt \
+            release-assets/build-manifest.json \
+            --target "$TARGET" \
+            --title "STGR Browser v${VERSION}" \
+            --notes "$NOTES"

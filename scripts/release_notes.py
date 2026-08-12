@@ -2,7 +2,7 @@
 """Generate GitHub release notes for STGR Browser (§69).
 
 Pulls the STGR version, the Firefox base version, and the commit history
-since the previous tag. Run by release.yml; also usable locally.
+since the previous tag. Run by ci.yml; also usable locally.
 """
 from __future__ import annotations
 
@@ -34,10 +34,13 @@ def main() -> int:
     args = ap.parse_args()
     cfg = load_config()
 
+    # The release tag for THIS version does not exist yet (ci.yml creates it
+    # after generating notes), so find the nearest previous release tag from
+    # the commit history instead of v<version>~1.
     try:
         previous = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0",
-             f"v{args.version}~1"], cwd=ROOT, capture_output=True, text=True,
+            ["git", "describe", "--tags", "--abbrev=0", "HEAD~1"],
+            cwd=ROOT, capture_output=True, text=True,
             check=True).stdout.strip()
     except subprocess.CalledProcessError:
         previous = ""

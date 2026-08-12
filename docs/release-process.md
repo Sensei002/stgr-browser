@@ -5,15 +5,21 @@
 STGR generally follows Firefox Stable releases. Security patch releases are
 prioritized and marked `SECURITY UPDATE`.
 
-## Pipeline (release.yml)
+## Pipeline (ci.yml — single workflow)
 
 ```
-push tag vX.Y.Z
-  → reusable build-windows.yml  (sync → patch → build → package)
+push to main
+  → auto version bump (patch, past the highest vX.Y.Z tag)
+  → sync → patch → build → package
   → sign installer (when certificate configured)
   → recompute SHA256SUMS.txt
-  → draft GitHub Release with assets + notes
+  → push version-bump commit ([skip ci]) + create tag vX.Y.Z
+  → publish GitHub Release with assets + notes
 ```
+
+Every push to `main` triggers the full pipeline; the release tag and version
+are derived automatically by `scripts/next_version.py`. Manual runs are
+available via `workflow_dispatch`.
 
 ### Assets (every stable release)
 
@@ -54,7 +60,7 @@ auto-downgraded.
 
 ## Code signing (§71)
 
-- Architecture is in place (`release.yml` signs when secrets exist).
+- Architecture is in place (`ci.yml` signs when secrets exist).
 - Certificate stored **only** in GitHub Secrets (`WINDOWS_SIGNING_CERT_BASE64`
   + `WINDOWS_SIGNING_CERT_PASSWORD`) or a secure signing service — never in
   Git; `security.yml` scans for `.pfx`/`.p12`/`.key` in tree and history.

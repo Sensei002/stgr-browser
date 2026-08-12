@@ -63,9 +63,17 @@ export MOZCONFIG="$(pwd)/stgr/build/mozconfig.windows-x64-release"
 ## First build time
 
 A cold Firefox build takes **1–4+ hours** on typical hardware and much longer
-on constrained CI runners. sccache + the CI caches (`build-windows.yml`) cut
-rebuilds drastically. Don't be alarmed by the first build — it is the
+on constrained CI runners. sccache + the CI caches (`.github/workflows/ci.yml`)
+cut rebuilds drastically. Don't be alarmed by the first build — it is the
 expensive one.
+
+## CI/CD (single workflow)
+
+`.github/workflows/ci.yml` is the entire pipeline: on every push to `main` it
+bumps the patch version (`scripts/next_version.py`), builds the browser,
+packages the installer + portable archive, creates tag `vX.Y.Z` and publishes
+a GitHub Release with the `.exe`. No tag push or separate release workflow is
+needed — see `docs/release-process.md`.
 
 ## Local iteration
 

@@ -19,5 +19,10 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "default48.png",
         "default512.png",
         "default64.png",
+        "document.ico",
+        "document_pdf.ico",
         "firefox.ico",
+        "newtab.ico",
+        "newwindow.ico",
+        "pbmode.ico",
     ]

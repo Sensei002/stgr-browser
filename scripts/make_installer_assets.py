@@ -6,6 +6,7 @@ branding directory. They are generated into the staged in-tree branding copy,
 so no Mozilla installer artwork is redistributed:
 
   firefox64.ico
+  document.ico / newwindow.ico / newtab.ico / pbmode.ico / document_pdf.ico
   stubinstaller/bgstub.jpg
   wizHeader.bmp
   wizHeaderRTL.bmp
@@ -73,6 +74,14 @@ def generate(out: Path, icon: Path) -> None:
         raise SystemExit(f"STGR icon is missing: {icon}")
     out.mkdir(parents=True, exist_ok=True)
     shutil.copy2(icon, out / "firefox64.ico")
+
+    # Firefox's Windows .rc resources hard-reference the full application icon
+    # set from the branding directory (firefox.exe.rc, private_browsing.exe.rc);
+    # llvm-rc fails if any are missing. All variants derive from the STGR
+    # master icon.
+    for name in ("document.ico", "newwindow.ico", "newtab.ico",
+                 "pbmode.ico", "document_pdf.ico"):
+        shutil.copy2(icon, out / name)
 
     _bmp(out / "wizHeader.bmp", 150, 57)
     _bmp(out / "wizHeaderRTL.bmp", 150, 57, rtl=True)
