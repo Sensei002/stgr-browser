@@ -35,13 +35,14 @@ diff --git a/browser/components/stgr/moz.build b/browser/components/stgr/moz.bui
 new file mode 100644
 --- /dev/null
 +++ b/browser/components/stgr/moz.build
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,18 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-+
-+# STGR Browser static UI resources. RESOURCE_FILES installs these under
-+# resource://gre/res/stgr/ in packaged builds.
++# browser/moz.build exports DIST_SUBDIR="browser" to this subtree. Keep
++# these files in Firefox's global resource namespace so the resource://gre
++# URLs configured by STGR resolve consistently in packaged builds.
++DIST_SUBDIR = ""
 +
 +RESOURCE_FILES += [
 +    "about/aboutStgr.html",
