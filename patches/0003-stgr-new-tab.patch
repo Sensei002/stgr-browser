@@ -45,10 +45,10 @@ new file mode 100644
 +
 +RESOURCE_FILES += [
 +    "about/aboutStgr.html",
-+    "newtab/newtab.html",
-+    "newtab/newtab.css",
-+    "newtab/newtab.js",
 +    "branding/stgr-logo.svg",
++    "newtab/newtab.css",
++    "newtab/newtab.html",
++    "newtab/newtab.js",
 +]
 +
 +with Files("**"):
