@@ -202,7 +202,19 @@ if ($existing) {
         Write-Host "Adequate pagefile already exists on $DiskRoot ($($existing.AllocatedBaseSize) MB allocated) - skipping creation"
         $active = $existing
     } else {
-        throw "Existing pagefile on $DiskRoot is only $($existing.AllocatedBaseSize) MB (< $MinimumSize). Remove it or choose another drive."
+        # The runner image may ship a small pagefile on this drive. Remove it
+        # first (NtCreatePagingFile with size 0 deletes the pagefile on that
+        # drive), then fall through to creating the big one.
+        Write-Host "Existing pagefile on $DiskRoot is only $($existing.AllocatedBaseSize) MB - removing it to recreate at $MinimumSize..."
+        try {
+            [StgrUtil.PageFile]::SetPageFileSize(0, 0, $DiskRoot)
+        } catch {
+            $ex = $_.Exception
+            if ($ex.InnerException) { $ex = $ex.InnerException }
+            throw "Could not remove existing pagefile on $DiskRoot: $($ex.Message)"
+        }
+        Start-Sleep -Seconds 5
+        $existing = $null
     }
 }
 
