@@ -17,6 +17,13 @@ requires a reboot to take effect; the native NtCreatePagingFile API (the
 same technique battle-tested in al-cheb/configure-pagefile-action) activates
 the pagefile immediately, without touching the existing D: pagefile.
 
+The script is defensive on purpose: it pre-checks for an existing pagefile on
+the target drive and for free disk space (the two ways NtCreatePagingFile can
+fail on a freshly provisioned runner), retries the native call once (it can
+fail transiently while the image's own pagefile is still initializing), and
+reports the raw NTSTATUS in hex when creation does fail so CI failures are
+self-explanatory.
+
 Usage:
   pwsh -File scripts/configure-pagefile.ps1 -MinimumSize 8GB -MaximumSize 16GB -DiskRoot "C:"
 #>
@@ -131,7 +138,7 @@ StringBuilder lpTargetPath = new StringBuilder(260);
 UInt32 resultQueryDosDevice = NativeMethods.QueryDosDeviceW(lpDeviceName, lpTargetPath, lpTargetPath.Capacity);
 if (resultQueryDosDevice == 0)
 {
-throw new Win32Exception(Marshal.GetLastWin32Error());
+throw new Win32Exception(Marshal.GetLastWin32Error(), "QueryDosDeviceW failed for " + lpDeviceName);
 }
 string pageFilePath = lpTargetPath.ToString() + "\\pagefile.sys";
 NativeMethods.UNICODE_STRING pageFileName = new NativeMethods.UNICODE_STRING
@@ -143,9 +150,14 @@ buffer = pageFilePath
 Int32 resultNtCreatePagingFile = NativeMethods.NtCreatePagingFile(ref pageFileName, ref minimumValue, ref maximumValue, 0);
 if (resultNtCreatePagingFile != 0)
 {
-// NtCreatePagingFile returns an NTSTATUS; GetLastWin32Error() is not
-// meaningful here, so surface the raw status for diagnostics.
-throw new Win32Exception(unchecked((int)resultNtCreatePagingFile), "NtCreatePagingFile failed for " + pageFilePath);
+// NtCreatePagingFile returns an NTSTATUS; surface it in hex so CI logs
+// are self-explanatory (e.g. 0xC0000035 STATUS_OBJECT_NAME_COLLISION,
+// 0xC000007F STATUS_DISK_FULL).
+throw new Win32Exception(
+unchecked((int)resultNtCreatePagingFile),
+string.Format(
+"NtCreatePagingFile failed for {0} (NTSTATUS 0x{1:X8})",
+pageFilePath, unchecked((uint)resultNtCreatePagingFile)));
 }
 Console.WriteLine("PageFile created: {0} / {1} bytes at {2}", minimumValue, maximumValue, pageFilePath);
 }
@@ -177,17 +189,64 @@ NativeMethods.AdjustTokenPrivileges(hToken, false, ref newState, NativeMethods.T
 Add-Type -TypeDefinition $source
 
 Write-Host "Adding pagefile on ${DiskRoot} (min $MinimumSize / max $MaximumSize)..."
-[StgrUtil.PageFile]::SetPageFileSize([long]$MinimumSize, [long]$MaximumSize, $DiskRoot)
+
+# Pre-flight 1: is there already an adequate pagefile on the target drive?
+# (NtCreatePagingFile fails with STATUS_OBJECT_NAME_COLLISION if one exists.)
+$driveLetter = $DiskRoot.TrimEnd(':')
+$existing = Get-CimInstance Win32_PageFileUsage | Where-Object {
+    $_.Name -match "^$([regex]::Escape($driveLetter))" -and $_.AllocatedBaseSize -gt 0
+}
+$active = $null
+if ($existing) {
+    if ($existing.AllocatedBaseSize -ge [long]($MinimumSize / 1MB)) {
+        Write-Host "Adequate pagefile already exists on $DiskRoot ($($existing.AllocatedBaseSize) MB allocated) - skipping creation"
+        $active = $existing
+    } else {
+        throw "Existing pagefile on $DiskRoot is only $($existing.AllocatedBaseSize) MB (< $MinimumSize). Remove it or choose another drive."
+    }
+}
+
+# Pre-flight 2: enough free space for the minimum pagefile size?
+if (-not $active) {
+    $vol = Get-Volume -DriveLetter $driveLetter
+    if (-not $vol -or $vol.SizeRemaining -lt ($MinimumSize + 1GB)) {
+        $free = if ($vol) { $vol.SizeRemaining } else { 0 }
+        throw "Not enough free space on $DiskRoot for a $MinimumSize pagefile (free: $free bytes)."
+    }
+    Write-Host "Free space on $DiskRoot: $([math]::Round($vol.SizeRemaining / 1GB, 1)) GB"
+
+    # Create with one retry: on a freshly provisioned runner the native call
+    # can transiently fail (image pagefile still initializing).
+    $created = $false
+    for ($attempt = 1; $attempt -le 2 -and -not $created; $attempt++) {
+        try {
+            [StgrUtil.PageFile]::SetPageFileSize([long]$MinimumSize, [long]$MaximumSize, $DiskRoot)
+            $created = $true
+        } catch {
+            $ex = $_.Exception
+            if ($ex.InnerException) { $ex = $ex.InnerException }
+            Write-Host "NtCreatePagingFile attempt $attempt/2 failed: $($ex.Message)"
+            if ($attempt -lt 2) {
+                Write-Host "Retrying in 15 s..."
+                Start-Sleep -Seconds 15
+            } else {
+                throw
+            }
+        }
+    }
+}
 
 # Give the OS a moment to register the new pagefile, then report.
-for ($i = 0; $i -lt 6; $i++) {
+for ($i = 0; $i -lt 12; $i++) {
     Start-Sleep -Seconds 5
-    $active = Get-CimInstance Win32_PageFileUsage |
-        Where-Object { $_.Name -match '^C:' -and $_.AllocatedBaseSize -gt 0 }
+    $active = Get-CimInstance Win32_PageFileUsage | Where-Object {
+        $_.Name -match "^$([regex]::Escape($driveLetter))" -and $_.AllocatedBaseSize -gt 0
+    }
     if ($active) { break }
+    Write-Host "Probe $($i + 1): pagefile on $DiskRoot not visible yet, waiting..."
 }
 Get-CimInstance Win32_PageFileUsage | Format-Table -AutoSize
 if (-not $active) {
-    throw "C: pagefile did not activate after NtCreatePagingFile - the ThinLTO build would run out of memory."
+    throw "Pagefile on $DiskRoot did not activate after creation - the ThinLTO build would run out of memory."
 }
-Write-Host "C: pagefile active ($($active.AllocatedBaseSize) MB allocated)"
+Write-Host "$DiskRoot pagefile active ($($active.AllocatedBaseSize) MB allocated)"
