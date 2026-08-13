@@ -49,34 +49,32 @@ jobs:
           echo "This build will be released as STGR Browser v$VER"
 
       - name: Enlarge Windows pagefile (no reboot needed)
-        # The 7 GB runner RAM + default pagefile cannot feed concurrent
-        # clang-cl ThinLTO or rustc (gkrust): ERROR_COMMITMENT_LIMIT (0x5AF).
-        # Windows activates a pagefile on a volume that had none immediately,
-        # so add one on the temp D: drive. Fail fast here (before the
-        # multi-hour build) if it does not activate.
+        # The 16 GB runner RAM + default pagefile cannot feed concurrent
+        # clang-cl ThinLTO frontends and rustc LTO (gkrust): LLVM aborts with
+        # "out of memory" / 0xC000001D right at those two peak-memory units
+        # (as seen in logs_85837817316). This is the standard, battle-tested
+        # fix for ERROR_COMMITMENT_LIMIT on GitHub Windows runners: it calls
+        # the native NtCreatePagingFile API (no WMI type pitfalls, no reboot)
+        # to add a pagefile on D: while leaving the C: system-managed one.
+        uses: al-cheb/configure-pagefile-action@v1.5
+        with:
+          minimum-size: 8GB
+          maximum-size: 16GB
+          disk-root: "D:"
+
+      - name: Verify pagefile is actually sized
+        # Fail fast here (seconds) instead of after ~3 h of compiling with a
+        # pagefile that is too small. The previous step silently created a
+        # default-sized 2.9 GB pagefile; require at least 8 GB allocated.
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Continue"
-          try {
-            Get-CimInstance Win32_ComputerSystem |
-              Set-CimInstance -Property @{ AutomaticManagedPagefile = $false }
-            New-CimInstance -ClassName Win32_PageFileSetting -ErrorAction Stop `
-              -Property @{ Name = "D:\pagefile.sys"; InitialSize = 8192; MaximumSize = 24576 }
-            Write-Host "Configured D:\pagefile.sys (8-24 GB)"
-          } catch {
-            Write-Warning "Pagefile setup failed: $($_.Exception.Message)"
+          $pagefiles = Get-CimInstance Win32_PageFileUsage
+          $pagefiles | Format-Table -AutoSize
+          $totalMB = ($pagefiles | Measure-Object -Property AllocatedBaseSize -Sum).Sum
+          Write-Host "Total pagefile: $totalMB MB"
+          if (-not $totalMB -or $totalMB -lt 8192) {
+            throw "Pagefile too small ($totalMB MB) - the ThinLTO build would OOM again. Fix the pagefile step."
           }
-          $active = $null
-          for ($i = 0; $i -lt 6 -and -not $active; $i++) {
-            Start-Sleep -Seconds 5
-            $active = Get-CimInstance Win32_PageFileUsage |
-              Where-Object { $_.Name -match '^D:' -and $_.AllocatedBaseSize -gt 0 }
-          }
-          Get-CimInstance Win32_PageFileUsage | Format-Table -AutoSize
-          if (-not $active) {
-            throw "D: pagefile did not activate - the ThinLTO build would run out of memory. Fix the pagefile step before rebuilding."
-          }
-          Write-Host "D: pagefile active ($($active.AllocatedBaseSize) MB allocated)"
 
       - name: Cache Firefox source (git objects)
         uses: actions/cache@v4
@@ -91,9 +89,11 @@ jobs:
         run: python scripts/update_firefox.py sync
 
       - name: Cache sccache
+        # SCCACHE_DIR lives on C: (NOT runner.temp on D:) so the large D:
+        # pagefile does not compete with the sccache disk usage.
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/sccache
+          path: C:\sccache
           key: sccache-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             sccache-${{ runner.os }}-
@@ -150,15 +150,20 @@ jobs:
         run: python scripts/apply_patches.py apply
 
       - name: Build
+        # MOZ_OBJDIR on C: keeps the multi-GB obj dir off the D: pagefile
+        # drive; SCCACHE_DIR on C: likewise. build_stgr.py resolves the obj
+        # dir from MOZ_OBJDIR when set.
         shell: bash
         env:
-          SCCACHE_DIR: ${{ runner.temp }}/sccache
+          SCCACHE_DIR: C:\sccache
+          MOZ_OBJDIR: C:\stgr-obj
         run: python scripts/build_stgr.py build
 
       - name: Package (installer + portable + checksums + manifest)
         shell: bash
         env:
-          SCCACHE_DIR: ${{ runner.temp }}/sccache
+          SCCACHE_DIR: C:\sccache
+          MOZ_OBJDIR: C:\stgr-obj
         run: python scripts/build_stgr.py package
 
       - name: Upload artifacts

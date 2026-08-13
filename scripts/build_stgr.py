@@ -249,10 +249,19 @@ def cmd_package(cfg: dict) -> int:
     if cfg["build"].get("installer"):
         mach(cfg, "build", "installer")
 
-    # Collect artifacts (mach writes to obj-dir/dist/…; find the real ones).
-    dist = next(FIREFOX_DIR.glob("obj-*/dist"), None)
-    if dist is None:
-        raise SystemExit("no obj-*/dist found after package")
+    # Collect artifacts (mach writes to obj-dir/dist/…). When MOZ_OBJDIR is
+    # set (CI moves the obj dir to C: to keep the multi-GB build off the
+    # pagefile drive) it takes precedence; otherwise use mach's default
+    # obj-*/dist inside the Firefox tree.
+    obj_dir = os.environ.get("MOZ_OBJDIR")
+    if obj_dir:
+        dist = Path(obj_dir) / "dist"
+        if not dist.is_dir():
+            raise SystemExit(f"MOZ_OBJDIR dist missing: {dist}")
+    else:
+        dist = next(FIREFOX_DIR.glob("obj-*/dist"), None)
+        if dist is None:
+            raise SystemExit("no obj-*/dist found after package")
     version = cfg["product"]["version"]
     releases = REPO_ROOT / "releases"
     releases.mkdir(exist_ok=True)
