@@ -249,6 +249,10 @@ def _source_info(cfg: dict) -> dict | None:
         "MOZ_SOURCE_REPO": repo,
         "MOZ_SOURCE_CHANGESET": head,
         "MOZ_BUILD_DATE": datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
+        # informulate.py (run by `mach package` under MOZ_AUTOMATION) reads
+        # MH_BRANCH from the environment and dies with KeyError when it is
+        # missing; Mozilla's own CI sets it to the source tree name.
+        "MH_BRANCH": f"stgr-{cfg['firefox']['upstream_branch']}",
     }
 
 
@@ -289,9 +293,13 @@ def sha256(path: Path) -> str:
 
 
 def cmd_package(cfg: dict) -> int:
+    # On Windows, `mach package` already builds the NSIS installer: packager.mk's
+    # make-package target runs `make -C windows installer` (WINNT + ZIP package
+    # format), which produces instgen/setup.exe and then `mach repackage
+    # installer` to write the final <pkg>.installer.exe into the obj-dir dist.
+    # A separate top-level `mach build installer` target is not guaranteed to
+    # exist, so do not call it again here.
     mach(cfg, "package")
-    if cfg["build"].get("installer"):
-        mach(cfg, "build", "installer")
 
     # Collect artifacts (mach writes to obj-dir/dist/…). When MOZ_OBJDIR is
     # set (CI moves the obj dir to C: to keep the multi-GB build off the
@@ -315,8 +323,14 @@ def cmd_package(cfg: dict) -> int:
                             + list(dist.glob("installer/*.exe"))
                             + list(dist.glob("install/sea/*.exe"))
                             + list(dist.glob("install/**/*.exe")))
+    # The full NSIS installer is named <pkg-basename>.installer.exe (e.g.
+    # firefox-153.0.en-US.win64.installer.exe); match by suffix/substring
+    # rather than assuming a literal "setup" in the name.
     setup = next((c for c in installer_candidates
-                  if "setup" in c.name.lower()), None)
+                  if "setup" in c.name.lower()
+                  or c.name.lower().endswith(".installer.exe")), None)
+    if setup is None and len(installer_candidates) == 1:
+        setup = installer_candidates[0]
     if setup:
         shutil.copy2(setup, releases / f"{prefix}-Setup.exe")
         log("package", f"installer -> releases/{prefix}-Setup.exe")
