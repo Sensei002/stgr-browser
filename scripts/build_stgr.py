@@ -223,11 +223,45 @@ def cmd_verify_prefs_sync(cfg: dict) -> int:
     return 0
 
 
+def _source_info(cfg: dict) -> dict | None:
+    """Resolve the source-repo env vars Firefox's packaging requires.
+
+    Firefox reads MOZ_SOURCE_REPO / MOZ_SOURCE_CHANGESET from the environment
+    at configure time (toolkit/moz.configure) and stores them in
+    buildconfig.substs; `mach package` then runs informulate.py (gated on
+    MOZ_AUTOMATION), which hard-fails with KeyError when they are absent.
+    informulate.py also reads MOZ_BUILD_DATE from the environment (formatted
+    %Y%m%d%H%M%S). Mozilla's own automation injects all three. Our checkout
+    is a git clone of the pinned upstream release tag, so report that
+    repository and the checked-out commit, and stamp MOZ_BUILD_DATE from the
+    clock. Returns None when the checkout cannot be resolved (callers then
+    fall back to whatever the environment already provides).
+    """
+    repo = cfg["firefox"]["upstream_repository"]
+    try:
+        head = run(["git", "rev-parse", "HEAD"], cwd=FIREFOX_DIR,
+                   check=True, capture=True).stdout.strip()
+    except Exception:
+        return None
+    if not head:
+        return None
+    return {
+        "MOZ_SOURCE_REPO": repo,
+        "MOZ_SOURCE_CHANGESET": head,
+        "MOZ_BUILD_DATE": datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
+    }
+
+
 def mach(cfg: dict, *args: str, check: bool = True):
     """Run ./mach inside the Firefox tree with the STGR mozconfig."""
     env = os.environ.copy()
     env["MOZCONFIG"] = str(REPO_ROOT / cfg["build"]["mozconfig"])
     env.setdefault("MOZ_AUTOMATION", "1")
+    # Provide the source-repo/build-date metadata the packager expects
+    # (Mozilla's automation normally injects these). setdefault so an explicit
+    # CI override wins.
+    for key, value in (_source_info(cfg) or {}).items():
+        env.setdefault(key, value)
     return run([sys.executable, "mach", *args], cwd=FIREFOX_DIR,
                check=check, capture=False, env=env)
 
