@@ -124,8 +124,18 @@ def cmd_prepare(cfg: dict) -> int:
     #    into browser/branding/stgr before mach configures the tree.
     BRAND_DST.mkdir(parents=True, exist_ok=True)
     for name in ("configure.sh", "moz.build", "branding.nsi",
-                 "brand.dtd", "brand.ftl", "brand.properties"):
+                 "brand.dtd", "brand.ftl", "brand.properties",
+                 "firefox.VisualElementsManifest.xml",
+                 "private_browsing.VisualElementsManifest.xml",
+                 "VisualElements_150.png", "VisualElements_70.png",
+                 "PrivateBrowsing_150.png", "PrivateBrowsing_70.png"):
         shutil.copy2(BRAND_SRC / name, BRAND_DST / name)
+    # Branding preferences (installed by FirefoxBranding() via
+    # JS_PREFERENCE_FILES -> bin/browser/defaults/preferences/).
+    pref_dst = BRAND_DST / "pref"
+    pref_dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(BRAND_SRC / "pref" / "firefox-branding.js",
+                 pref_dst / "firefox-branding.js")
     stub_src = BRAND_SRC / "stubinstaller"
     stub_dst = BRAND_DST / "stubinstaller"
     stub_dst.mkdir(parents=True, exist_ok=True)

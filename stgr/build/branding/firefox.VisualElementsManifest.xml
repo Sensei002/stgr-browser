@@ -1,0 +1,16 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!-- STGR Browser Windows Start-tile manifest. Referenced by
+     browser/installer/package-manifest.in as @BINPATH@/firefox.VisualElementsManifest.xml
+     and installed via FINAL_TARGET_FILES[".."] in the staging moz.build. -->
+
+<Application xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'>
+  <VisualElements
+      ShowNameOnSquare150x150Logo='on'
+      Square150x150Logo='browser\VisualElements\VisualElements_150.png'
+      Square70x70Logo='browser\VisualElements\VisualElements_70.png'
+      ForegroundText='light'
+      BackgroundColor='#141414'/>
+</Application>

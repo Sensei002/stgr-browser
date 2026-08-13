@@ -4,6 +4,22 @@
 
 # STGR keeps the branding source outside the Firefox checkout. The build
 # orchestrator stages this file and the assets into browser/branding/stgr.
+#
+# Firefox's branding contract (see browser/branding/nightly/moz.build) requires
+# DIST_SUBDIR="browser" plus the FirefoxBranding() template from
+# ../branding-common.mozbuild. The template installs the files that
+# browser/installer/package-manifest.in expects at package time:
+#   - bin/firefox.VisualElementsManifest.xml / private_browsing.VisualElementsManifest.xml
+#     (FINAL_TARGET_FILES[".."] with DIST_SUBDIR -> bin/)
+#   - bin/browser/VisualElements/*.png (FINAL_TARGET_FILES.VisualElements)
+#   - bin/browser/defaults/preferences/firefox-branding.js (JS_PREFERENCE_FILES)
+# Without these, `mach package` fails with "Missing file(s)".
+DIST_SUBDIR = "browser"
+export("DIST_SUBDIR")
+
+include("../branding-common.mozbuild")
+FirefoxBranding()
+
 FINAL_TARGET_FILES += [
     "brand.dtd",
     "brand.ftl",
