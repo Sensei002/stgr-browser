@@ -49,23 +49,26 @@ jobs:
           echo "This build will be released as STGR Browser v$VER"
 
       - name: Enlarge Windows pagefile (no reboot needed)
-        # The 16 GB runner RAM + default pagefile cannot feed concurrent
-        # clang-cl ThinLTO frontends and rustc LTO (gkrust): LLVM aborts with
-        # "out of memory" / 0xC000001D right at those two peak-memory units
-        # (as seen in logs_85837817316). This is the standard, battle-tested
-        # fix for ERROR_COMMITMENT_LIMIT on GitHub Windows runners: it calls
-        # the native NtCreatePagingFile API (no WMI type pitfalls, no reboot)
-        # to add a pagefile on D: while leaving the C: system-managed one.
-        uses: al-cheb/configure-pagefile-action@v1.5
-        with:
-          minimum-size: 8GB
-          maximum-size: 16GB
-          disk-root: "D:"
+        # The ~7 GB runner RAM + the image's small system pagefile on D: (~3
+        # GB) cannot feed concurrent clang-cl ThinLTO frontends and the rustc
+        # LTO link of gkrust: LLVM aborts with "out of memory" / 0xC000001D
+        # right at those two peak-memory units (as seen in logs_85837817316).
+        #
+        # The image already has a pagefile on D:, and Windows allows only one
+        # pagefile per drive, so we add an 8-16 GB pagefile on C: (no pagefile
+        # there) via the native NtCreatePagingFile API - it activates
+        # immediately without a reboot and leaves the D: pagefile intact.
+        # (A WMI Win32_PageFileSetting resize would need a reboot; the
+        # al-cheb action cannot be used because it never removes the image's
+        # existing D: pagefile and fails with STATUS_OBJECT_NAME_COLLISION.)
+        shell: pwsh
+        run: pwsh -File scripts/configure-pagefile.ps1 -MinimumSize 8GB -MaximumSize 16GB -DiskRoot "C:"
 
       - name: Verify pagefile is actually sized
         # Fail fast here (seconds) instead of after ~3 h of compiling with a
-        # pagefile that is too small. The previous step silently created a
-        # default-sized 2.9 GB pagefile; require at least 8 GB allocated.
+        # pagefile that is too small. Commit limit = RAM + all pagefiles; the
+        # ~10 GB limit that OOM'd the build means we need at least 8 GB of
+        # pagefile on top of the runner's RAM.
         shell: pwsh
         run: |
           $pagefiles = Get-CimInstance Win32_PageFileUsage
@@ -150,20 +153,18 @@ jobs:
         run: python scripts/apply_patches.py apply
 
       - name: Build
-        # MOZ_OBJDIR on C: keeps the multi-GB obj dir off the D: pagefile
-        # drive; SCCACHE_DIR on C: likewise. build_stgr.py resolves the obj
-        # dir from MOZ_OBJDIR when set.
+        # The obj dir stays at mach's default location (inside the D: tree),
+        # which is proven to fit alongside the D: pagefile. SCCACHE_DIR on C:
+        # keeps the cache off the tighter D: drive.
         shell: bash
         env:
           SCCACHE_DIR: C:\sccache
-          MOZ_OBJDIR: C:\stgr-obj
         run: python scripts/build_stgr.py build
 
       - name: Package (installer + portable + checksums + manifest)
         shell: bash
         env:
           SCCACHE_DIR: C:\sccache
-          MOZ_OBJDIR: C:\stgr-obj
         run: python scripts/build_stgr.py package
 
       - name: Upload artifacts
