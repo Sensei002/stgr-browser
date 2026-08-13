@@ -211,7 +211,7 @@ if ($existing) {
         } catch {
             $ex = $_.Exception
             if ($ex.InnerException) { $ex = $ex.InnerException }
-            throw "Could not remove existing pagefile on $DiskRoot: $($ex.Message)"
+            throw "Could not remove existing pagefile on ${DiskRoot}: $($ex.Message)"
         }
         Start-Sleep -Seconds 5
         $existing = $null
@@ -225,7 +225,7 @@ if (-not $active) {
         $free = if ($vol) { $vol.SizeRemaining } else { 0 }
         throw "Not enough free space on $DiskRoot for a $MinimumSize pagefile (free: $free bytes)."
     }
-    Write-Host "Free space on $DiskRoot: $([math]::Round($vol.SizeRemaining / 1GB, 1)) GB"
+    Write-Host "Free space on ${DiskRoot}: $([math]::Round($vol.SizeRemaining / 1GB, 1)) GB"
 
     # Create with one retry: on a freshly provisioned runner the native call
     # can transiently fail (image pagefile still initializing).
