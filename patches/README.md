@@ -34,10 +34,12 @@ Upstream compatibility: …
 - **Never remove upstream copyright notices.**
 - **Markers stay in sync.** The preference blocks injected by 0002/0004 are the exact content of
   `stgr/config/preferences/*.js`. `scripts/build_stgr.py --verify-prefs-sync` enforces this.
-- **0003 embeds the official logo.** `browser/components/stgr/branding/stgr-logo.svg` is embedded
-  in the patch so a freshly-patched tree is complete. `build_stgr.py prepare` overwrites the staged
-  copy with the canonical `stgr/branding/stgr-logo.svg`, so the shipped build always uses the
-  current master. If the logo changes, regenerate the patch so the pre-`prepare` tree doesn't drift.
+- **0003 stages the UI, it does not embed it.** The patch only wires the moz.build
+  (`RESOURCE_FILES` -> `resource://gre/res/stgr/…`, `DIST_SUBDIR = ""`, `DIRS` for 0004/0006) and
+  the `AboutNewTabRedirector` hook. The actual page files (`newtab/*`, `about/aboutStgr.html`) and
+  the official logo are staged by `build_stgr.py prepare` into
+  `browser/components/stgr/res/stgr/…` from `stgr/ui/` + `stgr/branding/`, so the shipped build
+  always uses the current master copies.
 - Diffs are canonical drafts against the Firefox version pinned in
   `stgr/config/stgr-config.json` (`firefox.upstream_version`). Firefox moves fast — expect context
   to drift; that is normal and handled by the rebase machinery, not by force-applying.

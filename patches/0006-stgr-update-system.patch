@@ -18,12 +18,15 @@ diff --git a/browser/components/stgr/updater/moz.build b/browser/components/stgr
 new file mode 100644
 --- /dev/null
 +++ b/browser/components/stgr/updater/moz.build
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,12 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 +
 +# STGR update system module.
++# Keep DIST_SUBDIR="browser" (see gamingmode/moz.build) so the module is
++# installed into the app archive.
++DIST_SUBDIR = "browser"
 +
 +EXTRA_JS_MODULES += [
 +    "STGRUpdater.sys.mjs",

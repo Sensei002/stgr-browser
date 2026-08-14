@@ -91,21 +91,23 @@ def cmd_prepare(cfg: dict) -> int:
     if not FIREFOX_DIR.exists():
         raise SystemExit("no ./firefox checkout. Run: python scripts/update_firefox.py sync")
 
-    # 1. UI resources with template substitution. These land at
-    #    browser/components/stgr/… and are packaged by the 0003 moz.build
-    #    (RESOURCE_FILES -> resource://gre/res/stgr/…). The chrome CSS is
-    #    shipped inline in browser-shared.css by patch 0005, not staged here.
+    # 1. UI resources with template substitution. These land under
+    #    browser/components/stgr/res/stgr/… and are packaged by the 0003
+    #    moz.build RESOURCE_FILES (dist/bin/res/stgr/… -> root omni.ja ->
+    #    resource://gre/res/stgr/…, same mechanism editor/composer uses for
+    #    its res/* files). The chrome CSS is shipped inline in
+    #    browser-shared.css by patch 0005, not staged here.
     for rel in ["newtab/newtab.html", "newtab/newtab.css", "newtab/newtab.js",
                 "about/aboutStgr.html"]:
         src = UI_SRC / rel
-        dst = UI_DST / rel
+        dst = UI_DST / "res" / "stgr" / rel
         if rel.endswith(".html"):
             text = substitute_text(src.read_text(encoding="utf-8"), cfg)
         else:
             text = src.read_text(encoding="utf-8")
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(text, encoding="utf-8")
-        log("prepare", f"staged {rel}")
+        log("prepare", f"staged res/stgr/{rel}")
 
     # 1b. Branding logo — the new-tab and about pages reference it relative
     #     (../branding/stgr-logo.svg), so it must exist inside the staged
@@ -113,10 +115,10 @@ def cmd_prepare(cfg: dict) -> int:
     #     RESOURCE_FILES (packaged at resource://gre/res/stgr/branding/).
     logo_src = REPO_ROOT / "stgr" / "branding" / "stgr-logo.svg"
     if logo_src.exists():
-        logo_dst = UI_DST / "branding" / "stgr-logo.svg"
+        logo_dst = UI_DST / "res" / "stgr" / "branding" / "stgr-logo.svg"
         logo_dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(logo_src, logo_dst)
-        log("prepare", "staged branding/stgr-logo.svg")
+        log("prepare", "staged res/stgr/branding/stgr-logo.svg")
 
     # 2. Branding directory. Firefox's mozbuild sandbox requires the
     #    --with-branding directory to be inside topsrcdir, so keep the
@@ -341,7 +343,7 @@ def _verify_packaged_contents(dist: Path) -> None:
         raise SystemExit(
             "STGR runtime assets missing from the final package: "
             + ", ".join(missing)
-            + ". Check jar.mn and browser/components/stgr/moz.build."
+            + ". Check RESOURCE_FILES + DIST_SUBDIR in browser/components/stgr/moz.build."
         )
     log("package", "verified STGR resources in toolkit and browser omni.ja")
 

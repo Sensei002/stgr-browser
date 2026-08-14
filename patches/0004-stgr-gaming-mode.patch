@@ -71,12 +71,16 @@ diff --git a/browser/components/stgr/gamingmode/moz.build b/browser/components/s
 new file mode 100644
 --- /dev/null
 +++ b/browser/components/stgr/gamingmode/moz.build
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,13 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 +
 +# STGR Gaming Mode module. Loaded from browser/base/content/browser-init.js.
++# The parent stgr/ dir resets DIST_SUBDIR to "" for its RESOURCE_FILES;
++# restore "browser" here so EXTRA_JS_MODULES installs into the app archive
++# and browser-init.js's resource:///modules/ import resolves.
++DIST_SUBDIR = "browser"
 +
 +EXTRA_JS_MODULES += [
 +    "STGRGamingMode.sys.mjs",
