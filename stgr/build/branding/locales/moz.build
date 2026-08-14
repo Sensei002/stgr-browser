@@ -1,0 +1,13 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# This file mirrors browser/branding/<channel>/locales/moz.build upstream.
+# Its presence makes the build backend generate
+# $(DEPTH)/browser/branding/stgr/locales/Makefile, which the langpack build
+# requires: browser/locales/Makefile.in lists it in SUBMAKEFILES and
+# `mach package` builds the en-US langpack (browser/installer/Makefile.in
+# `libs::` -> langpack-en-US -> l10n-en-US -> `make l10n` -> `misc`).
+# Without it, packaging dies with:
+#   No rule to make target '../../browser/branding/stgr/locales/Makefile'
+JAR_MANIFESTS += ["jar.mn"]

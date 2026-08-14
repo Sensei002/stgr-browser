@@ -14,6 +14,13 @@
 #   - bin/browser/VisualElements/*.png (FINAL_TARGET_FILES.VisualElements)
 #   - bin/browser/defaults/preferences/firefox-branding.js (JS_PREFERENCE_FILES)
 # Without these, `mach package` fails with "Missing file(s)".
+# The locales subdir must be declared in DIRS (as upstream branding dirs do,
+# e.g. browser/branding/nightly/moz.build) so the backend generates
+# $(DEPTH)/browser/branding/stgr/locales/Makefile; the langpack build requires
+# it (browser/locales/Makefile.in SUBMAKEFILES) or `mach package` dies with
+# "No rule to make target '../../browser/branding/stgr/locales/Makefile'".
+DIRS += ["locales"]
+
 DIST_SUBDIR = "browser"
 export("DIST_SUBDIR")
 

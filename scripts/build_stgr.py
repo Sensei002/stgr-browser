@@ -141,6 +141,19 @@ def cmd_prepare(cfg: dict) -> int:
     stub_dst.mkdir(parents=True, exist_ok=True)
     for name in ("installing_page.css", "profile_cleanup_page.css"):
         shutil.copy2(stub_src / name, stub_dst / name)
+    # Locale build support: `mach package` builds the en-US langpack, which
+    # requires browser/branding/stgr/locales/Makefile (generated from the
+    # locales/moz.build declared via DIRS in moz.build). Stage the same files
+    # upstream branding dirs ship (moz.build + jar.mn + en-US brand strings).
+    loc_src = BRAND_SRC / "locales"
+    loc_dst = BRAND_DST / "locales"
+    loc_dst.mkdir(parents=True, exist_ok=True)
+    for name in ("moz.build", "jar.mn"):
+        shutil.copy2(loc_src / name, loc_dst / name)
+    enus_dst = loc_dst / "en-US"
+    enus_dst.mkdir(parents=True, exist_ok=True)
+    for name in ("brand.ftl", "brand.properties"):
+        shutil.copy2(loc_src / "en-US" / name, enus_dst / name)
 
     # Icons are generated from the master logo. Copy unconditionally so a
     # regenerated set always replaces stale files in the in-tree branding dir.
