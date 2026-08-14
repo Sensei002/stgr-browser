@@ -1,10 +1,10 @@
 {
-  "$comment": "STGR central configuration — single source of truth for functional constants (§30 of the engineering spec). Scripts and CI read this file. Do not scatter STGR constants across the Firefox tree.",
+  "$comment": "STGR central configuration \u2014 single source of truth for functional constants (\u00a730 of the engineering spec). Scripts and CI read this file. Do not scatter STGR constants across the Firefox tree.",
   "product": {
     "name": "STGR Browser",
     "brand": "STEiGER Dojo",
     "website": "https://steigerdojo.mvp.bd",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "update_channel": "stable",
     "source_repository": "https://github.com/Sensei002/stgr-browser",
     "update_repository": "https://github.com/Sensei002/stgr-browser"
