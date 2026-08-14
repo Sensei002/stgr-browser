@@ -10,12 +10,20 @@ commit limit than RAM + that pagefile: with ~7 GB RAM it aborts with
 "LLVM ERROR: out of memory" / 0xC000001D at the two peak-memory compile
 units (see docs/release-process.md).
 
-Windows cannot create a second pagefile on a drive that already has one, so
-the extra pagefile goes on C: (the system drive has no pagefile on this
-image and has room). Creating pagefiles through WMI (Win32_PageFileSetting)
-requires a reboot to take effect; the native NtCreatePagingFile API (the
-same technique battle-tested in al-cheb/configure-pagefile-action) activates
-the pagefile immediately, without touching the existing D: pagefile.
+The runner image ships a small pagefile on the target drive (e.g. 2944 MB on
+C: with the current windows-2022 image). The image's own WMI-based resize
+(Win32_PageFileSetting) requires a reboot, so we use the native
+NtCreatePagingFile API (the same technique battle-tested in
+al-cheb/configure-pagefile-action) which takes effect immediately. One
+important subtlety: NtCreatePagingFile can never DELETE a pagefile - passing
+0 for the minimum is below the kernel's 1 MB floor and fails with
+STATUS_INVALID_PARAMETER_2 (0xC00000F0). Instead, calling it with the SAME
+file path and larger sizes puts the kernel into its "paging file extension"
+mode, which resizes an in-use pagefile live (it only extends: a proposed
+minimum below the current minimum fails with STATUS_INVALID_PARAMETER_2, and
+a proposed maximum below the current maximum fails with
+STATUS_INVALID_PARAMETER_3). See:
+geoffchappell.com/studies/windows/km/ntoskrnl/api/mm/modwrite/create.htm
 
 The script is defensive on purpose: it pre-checks for an existing pagefile on
 the target drive and for free disk space (the two ways NtCreatePagingFile can
@@ -193,28 +201,31 @@ Write-Host "Adding pagefile on ${DiskRoot} (min $MinimumSize / max $MaximumSize)
 # Pre-flight 1: is there already an adequate pagefile on the target drive?
 # (NtCreatePagingFile fails with STATUS_OBJECT_NAME_COLLISION if one exists.)
 $driveLetter = $DiskRoot.TrimEnd(':')
-$existing = Get-CimInstance Win32_PageFileUsage | Where-Object {
-    $_.Name -match "^$([regex]::Escape($driveLetter))" -and $_.AllocatedBaseSize -gt 0
+$targetMB = [long]($MinimumSize / 1MB)
+
+function Get-TargetPagefile {
+    Get-CimInstance Win32_PageFileUsage | Where-Object {
+        $_.Name -match "^$([regex]::Escape($driveLetter))" -and $_.AllocatedBaseSize -gt 0
+    }
 }
+
+# Pre-flight 1: is there already a pagefile on the target drive?
+$existing = Get-TargetPagefile
 $active = $null
 if ($existing) {
-    if ($existing.AllocatedBaseSize -ge [long]($MinimumSize / 1MB)) {
-        Write-Host "Adequate pagefile already exists on $DiskRoot ($($existing.AllocatedBaseSize) MB allocated) - skipping creation"
+    if ($existing.AllocatedBaseSize -ge $targetMB) {
+        Write-Host "Adequate pagefile already exists on $DiskRoot ($($existing.AllocatedBaseSize) MB allocated) - nothing to do"
         $active = $existing
     } else {
-        # The runner image may ship a small pagefile on this drive. Remove it
-        # first (NtCreatePagingFile with size 0 deletes the pagefile on that
-        # drive), then fall through to creating the big one.
-        Write-Host "Existing pagefile on $DiskRoot is only $($existing.AllocatedBaseSize) MB - removing it to recreate at $MinimumSize..."
-        try {
-            [StgrUtil.PageFile]::SetPageFileSize(0, 0, $DiskRoot)
-        } catch {
-            $ex = $_.Exception
-            if ($ex.InnerException) { $ex = $ex.InnerException }
-            throw "Could not remove existing pagefile on ${DiskRoot}: $($ex.Message)"
-        }
-        Start-Sleep -Seconds 5
-        $existing = $null
+        # The runner image ships a small pagefile on this drive (e.g. 2944 MB
+        # on the current windows-2022 image). NtCreatePagingFile cannot DELETE
+        # a pagefile - a 0 minimum is below the kernel's 1 MB floor and fails
+        # with STATUS_INVALID_PARAMETER_2 (0xC00000F0). Calling it with the
+        # SAME path and larger sizes instead triggers the kernel's "paging
+        # file extension" mode, which resizes the in-use pagefile live. The
+        # extension only grows: a 0xC00000F0 there means the pagefile already
+        # meets our minimum, which we treat as success.
+        Write-Host "Existing pagefile on $DiskRoot is only $($existing.AllocatedBaseSize) MB - extending it to $MinimumSize / $MaximumSize..."
     }
 }
 
@@ -227,38 +238,63 @@ if (-not $active) {
     }
     Write-Host "Free space on ${DiskRoot}: $([math]::Round($vol.SizeRemaining / 1GB, 1)) GB"
 
-    # Create with one retry: on a freshly provisioned runner the native call
-    # can transiently fail (image pagefile still initializing).
-    $created = $false
-    for ($attempt = 1; $attempt -le 2 -and -not $created; $attempt++) {
-        try {
-            [StgrUtil.PageFile]::SetPageFileSize([long]$MinimumSize, [long]$MaximumSize, $DiskRoot)
-            $created = $true
-        } catch {
-            $ex = $_.Exception
-            if ($ex.InnerException) { $ex = $ex.InnerException }
-            Write-Host "NtCreatePagingFile attempt $attempt/2 failed: $($ex.Message)"
-            if ($attempt -lt 2) {
-                Write-Host "Retrying in 15 s..."
-                Start-Sleep -Seconds 15
-            } else {
-                throw
+    # Create (no pagefile yet) or extend (small image pagefile) with retries:
+    # on a freshly provisioned runner the native call can transiently fail
+    # while the image's own pagefile is still initializing. Extension mode
+    # rejects a proposed maximum below the file's current maximum with
+    # STATUS_INVALID_PARAMETER_3 (0xC00000F1), so on that error raise the
+    # ceiling and try again.
+    $sized = $false
+    $maxCandidates = @([long]$MaximumSize, 32GB, 64GB, 128GB)
+    foreach ($maxCandidate in $maxCandidates) {
+        if ($sized) { break }
+        for ($attempt = 1; $attempt -le 2; $attempt++) {
+            try {
+                [StgrUtil.PageFile]::SetPageFileSize([long]$MinimumSize, [long]$maxCandidate, $DiskRoot)
+                $sized = $true
+                if ([long]$maxCandidate -ne [long]$MaximumSize) {
+                    Write-Host "Pagefile sized with a $maxCandidate ceiling (requested $MaximumSize was below the file's current maximum)"
+                }
+                break
+            } catch {
+                $ex = $_.Exception
+                if ($ex.InnerException) { $ex = $ex.InnerException }
+                if ($ex.Message -match '0xC00000F0') {
+                    # Proposed minimum < current minimum => the pagefile already
+                    # satisfies our requirement.
+                    Write-Host "Existing pagefile minimum already meets $MinimumSize - treating as sized"
+                    $sized = $true
+                    break
+                }
+                if ($ex.Message -match '0xC00000F1') {
+                    # Proposed maximum < current maximum: raise the ceiling.
+                    Write-Host "NtCreatePagingFile: ceiling $maxCandidate below the file's current maximum - raising it"
+                    break
+                }
+                Write-Host "NtCreatePagingFile attempt $attempt/2 failed: $($ex.Message)"
+                if ($attempt -lt 2) {
+                    Write-Host "Retrying in 15 s..."
+                    Start-Sleep -Seconds 15
+                }
             }
         }
     }
+    if (-not $sized) {
+        throw "Could not size the pagefile on ${DiskRoot} to $MinimumSize - the ThinLTO build would run out of memory."
+    }
 }
 
-# Give the OS a moment to register the new pagefile, then report.
+# Give the OS a moment to register the new size, then report.
 for ($i = 0; $i -lt 12; $i++) {
     Start-Sleep -Seconds 5
-    $active = Get-CimInstance Win32_PageFileUsage | Where-Object {
-        $_.Name -match "^$([regex]::Escape($driveLetter))" -and $_.AllocatedBaseSize -gt 0
-    }
-    if ($active) { break }
-    Write-Host "Probe $($i + 1): pagefile on $DiskRoot not visible yet, waiting..."
+    $active = Get-TargetPagefile
+    if ($active -and $active.AllocatedBaseSize -ge $targetMB) { break }
+    $cur = if ($active) { "$($active.AllocatedBaseSize) MB" } else { "absent" }
+    Write-Host "Probe $($i + 1): pagefile on $DiskRoot not at ${targetMB} MB yet ($cur), waiting..."
 }
 Get-CimInstance Win32_PageFileUsage | Format-Table -AutoSize
-if (-not $active) {
-    throw "Pagefile on $DiskRoot did not activate after creation - the ThinLTO build would run out of memory."
+if (-not $active -or $active.AllocatedBaseSize -lt $targetMB) {
+    $got = if ($active) { "$($active.AllocatedBaseSize) MB" } else { "absent" }
+    throw "Pagefile on $DiskRoot did not reach $targetMB MB (got $got) - the ThinLTO build would run out of memory."
 }
 Write-Host "$DiskRoot pagefile active ($($active.AllocatedBaseSize) MB allocated)"

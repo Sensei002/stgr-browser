@@ -49,18 +49,20 @@ jobs:
           echo "This build will be released as STGR Browser v$VER"
 
       - name: Enlarge Windows pagefile (no reboot needed)
-        # The ~7 GB runner RAM + the image's small system pagefile on D: (~3
-        # GB) cannot feed concurrent clang-cl ThinLTO frontends and the rustc
-        # LTO link of gkrust: LLVM aborts with "out of memory" / 0xC000001D
-        # right at those two peak-memory units (as seen in logs_85837817316).
+        # The ~7 GB runner RAM + the image's small pagefile (~3 GB, currently
+        # on C: - the drive this step targets) cannot feed concurrent clang-cl
+        # ThinLTO frontends and the rustc LTO link of gkrust: LLVM aborts with
+        # "out of memory" / 0xC000001D right at those two peak-memory units
+        # (as seen in logs_85837817316).
         #
-        # The image already has a pagefile on D:, and Windows allows only one
-        # pagefile per drive, so we add an 8-16 GB pagefile on C: (no pagefile
-        # there) via the native NtCreatePagingFile API - it activates
-        # immediately without a reboot and leaves the D: pagefile intact.
-        # (A WMI Win32_PageFileSetting resize would need a reboot; the
-        # al-cheb action cannot be used because it never removes the image's
-        # existing D: pagefile and fails with STATUS_OBJECT_NAME_COLLISION.)
+        # configure-pagefile.ps1 sizes an 8-16 GB pagefile on C: via the
+        # native NtCreatePagingFile API, which takes effect immediately. When
+        # the image already ships a small pagefile there, calling the API with
+        # the same path and larger sizes runs the kernel's "paging file
+        # extension" mode and resizes it live (NtCreatePagingFile cannot
+        # delete a pagefile - a 0 minimum is invalid). WMI
+        # Win32_PageFileSetting would need a reboot, and the al-cheb action
+        # never handles an existing pagefile on the target drive.
         shell: pwsh
         run: pwsh -File scripts/configure-pagefile.ps1 -MinimumSize 8GB -MaximumSize 16GB -DiskRoot "C:"
 
