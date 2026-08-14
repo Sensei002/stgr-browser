@@ -283,6 +283,69 @@ def mach(cfg: dict, *args: str, check: bool = True):
                check=check, capture=False, env=env)
 
 
+def _verify_runtime_modules() -> None:
+    """Fail before compiling if startup modules are not part of the tree.
+
+    These modules are imported by browser-init.js at every browser-window
+    startup. A missing DIRS entry can therefore produce a successful compile
+    and a packaged executable that opens with an unusable blank window.
+    """
+    required = [
+        FIREFOX_DIR / "browser" / "components" / "stgr" / "gamingmode"
+        / "STGRGamingMode.sys.mjs",
+        FIREFOX_DIR / "browser" / "components" / "stgr" / "updater"
+        / "STGRUpdater.sys.mjs",
+    ]
+    missing = [str(path.relative_to(FIREFOX_DIR)) for path in required
+               if not path.is_file()]
+    if missing:
+        raise SystemExit(
+            "runtime modules missing from the patched Firefox tree: "
+            + ", ".join(missing)
+            + ". Check browser/components/stgr/moz.build DIRS."
+        )
+    log("build", "runtime ESM modules staged: gamingmode, updater")
+
+
+def _verify_packaged_contents(dist: Path) -> None:
+    """Verify STGR resources landed in the archives used by resource URLs."""
+    archives = list(dist.rglob("omni.ja"))
+    toolkit = next((path for path in archives
+                    if path.parent.name != "browser"), None)
+    app = next((path for path in archives
+                if path.parent.name == "browser"), None)
+    if toolkit is None or app is None:
+        raise SystemExit(
+            "packaged omni.ja archives not found; cannot verify STGR runtime assets"
+        )
+
+    def entries(path: Path) -> set[str]:
+        with zipfile.ZipFile(path) as archive:
+            return set(archive.namelist())
+
+    toolkit_entries = entries(toolkit)
+    app_entries = entries(app)
+    missing_toolkit = {
+        "res/stgr/about/aboutStgr.html",
+        "res/stgr/branding/stgr-logo.svg",
+        "res/stgr/newtab/newtab.css",
+        "res/stgr/newtab/newtab.html",
+        "res/stgr/newtab/newtab.js",
+    } - toolkit_entries
+    missing_app = {
+        "modules/STGRGamingMode.sys.mjs",
+        "modules/STGRUpdater.sys.mjs",
+    } - app_entries
+    if missing_toolkit or missing_app:
+        missing = sorted(missing_toolkit | missing_app)
+        raise SystemExit(
+            "STGR runtime assets missing from the final package: "
+            + ", ".join(missing)
+            + ". Check jar.mn and browser/components/stgr/moz.build."
+        )
+    log("package", "verified STGR resources in toolkit and browser omni.ja")
+
+
 def cmd_build(cfg: dict) -> int:
     if not (FIREFOX_DIR / "mach").exists():
         raise SystemExit("no mach in ./firefox — sync + bootstrap first")
@@ -291,6 +354,7 @@ def cmd_build(cfg: dict) -> int:
         log("build", "tree not patched or marker stale — running apply_patches")
         run([sys.executable, "scripts/apply_patches.py", "apply"])
     cmd_prepare(cfg)
+    _verify_runtime_modules()
     cmd_verify_prefs_sync(cfg)
     mach(cfg, "build")
     print("BUILD OK")
@@ -327,6 +391,7 @@ def cmd_package(cfg: dict) -> int:
         dist = next(FIREFOX_DIR.glob("obj-*/dist"), None)
         if dist is None:
             raise SystemExit("no obj-*/dist found after package")
+    _verify_packaged_contents(dist)
     version = cfg["product"]["version"]
     releases = REPO_ROOT / "releases"
     releases.mkdir(exist_ok=True)

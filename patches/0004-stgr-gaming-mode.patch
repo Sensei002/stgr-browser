@@ -208,7 +208,7 @@ diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser
 +
 +// STGR: Gaming Mode — browser resource management while gaming.
 +var { STGRGamingMode } = ChromeUtils.importESModule(
-+  "resource://gre/modules/STGRGamingMode.sys.mjs"
++  "resource:///modules/STGRGamingMode.sys.mjs"
 +);
  
  var gSerialDeviceObserver = {

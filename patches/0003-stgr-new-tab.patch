@@ -9,6 +9,7 @@ Purpose:                Ship the official STEiGER Dojo logo with the UI. Replace
                         browser.newtabpage.activity-stream.overrideURL pref (set in 0002).
 Files changed:          browser/components/moz.build
                         browser/components/stgr/moz.build            (new)
+                        browser/components/stgr/jar.mn                (new)
                         browser/components/stgr/newtab/newtab.html   (new)
                         browser/components/stgr/branding/stgr-logo.svg (new, official logo)
                         browser/components/stgr/newtab/newtab.css    (new)
@@ -18,7 +19,7 @@ Security impact:        None. The override only changes which local resource abo
                         resolves to; pages are static content with no privileged access.
 Performance impact:     Positive: replaces the heavy remote-rendered new tab with a few KB
                         of static HTML/CSS/JS. No idle timers beyond a local clock.
-Upstream compatibility: moz.build DIRS and RESOURCE_FILES are stable surfaces. The
+Upstream compatibility: moz.build DIRS and JAR_MANIFESTS are stable surfaces. The
                         defaultURL getter shape is verified against the release branch;
                         rebase risk LOW. Verify the packaged URL (resource://gre/res/stgr/)
                         with the smoke test.
@@ -35,7 +36,7 @@ diff --git a/browser/components/stgr/moz.build b/browser/components/stgr/moz.bui
 new file mode 100644
 --- /dev/null
 +++ b/browser/components/stgr/moz.build
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,21 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -44,16 +45,32 @@ new file mode 100644
 +# URLs configured by STGR resolve consistently in packaged builds.
 +DIST_SUBDIR = ""
 +
-+RESOURCE_FILES += [
-+    "about/aboutStgr.html",
-+    "branding/stgr-logo.svg",
-+    "newtab/newtab.css",
-+    "newtab/newtab.html",
-+    "newtab/newtab.js",
++# 0004 and 0006 add runtime ESM modules below this directory. DIRS is
++# required so mozbuild descends into those directories and installs the
++# modules referenced by browser-init.js and the updater.
++DIRS += [
++    "gamingmode",
++    "updater",
 +]
++
++# resource://gre/res/stgr/ is provided by toolkit.jar. RESOURCE_FILES alone
++# only creates an intermediate dist file and does not put it in omni.ja.
++JAR_MANIFESTS += ["jar.mn"]
 +
 +with Files("**"):
 +    BUG_COMPONENT = ("STGR Browser", "UI")
++
+diff --git a/browser/components/stgr/jar.mn b/browser/components/stgr/jar.mn
+new file mode 100644
+--- /dev/null
++++ b/browser/components/stgr/jar.mn
+@@ -0,0 +1,6 @@
++toolkit.jar:
++res/stgr/about/aboutStgr.html (about/aboutStgr.html)
++res/stgr/branding/stgr-logo.svg (branding/stgr-logo.svg)
++res/stgr/newtab/newtab.css (newtab/newtab.css)
++res/stgr/newtab/newtab.html (newtab/newtab.html)
++res/stgr/newtab/newtab.js (newtab/newtab.js)
 diff --git a/browser/components/stgr/branding/stgr-logo.svg b/browser/components/stgr/branding/stgr-logo.svg
 new file mode 100644
 --- /dev/null
