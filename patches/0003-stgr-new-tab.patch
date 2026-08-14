@@ -56,10 +56,9 @@ new file mode 100644
 +# resource://gre/res/stgr/ is provided by toolkit.jar. RESOURCE_FILES alone
 +# only creates an intermediate dist file and does not put it in omni.ja.
 +JAR_MANIFESTS += ["jar.mn"]
-+
 +with Files("**"):
 +    BUG_COMPONENT = ("STGR Browser", "UI")
-+
+
 diff --git a/browser/components/stgr/jar.mn b/browser/components/stgr/jar.mn
 new file mode 100644
 --- /dev/null
