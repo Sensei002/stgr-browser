@@ -37,7 +37,7 @@ diff --git a/browser/components/stgr/moz.build b/browser/components/stgr/moz.bui
 new file mode 100644
 --- /dev/null
 +++ b/browser/components/stgr/moz.build
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,37 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -55,13 +55,20 @@ new file mode 100644
 +    "updater",
 +]
 +
-+# RESOURCE_FILES installs into dist/bin relative to FINAL_TARGET; with
-+# DIST_SUBDIR="" that is the GRE root, so res/stgr/... lands in the root
-+# omni.ja and is served as resource://gre/res/stgr/... (the same mechanism
-+# editor/composer uses for its res/* files - no jar.mn involved).
-+RESOURCE_FILES += [
++# RESOURCE_FILES maps to FINAL_TARGET_FILES.res: entries install under
++# dist/bin/res/ and the destination subpath comes from the hierarchical
++# field access (RESOURCE_FILES.<dir> += ...), NOT from the entry string
++# (only the basename of each entry is used). With DIST_SUBDIR="" that is
++# the GRE root, so the entries below land at dist/bin/res/stgr/... -> root
++# omni.ja -> resource://gre/res/stgr/... (the same mechanism editor/composer
++# uses for its res/* files - no jar.mn involved).
++RESOURCE_FILES.stgr.about += [
 +    "res/stgr/about/aboutStgr.html",
++]
++RESOURCE_FILES.stgr.branding += [
 +    "res/stgr/branding/stgr-logo.svg",
++]
++RESOURCE_FILES.stgr.newtab += [
 +    "res/stgr/newtab/newtab.css",
 +    "res/stgr/newtab/newtab.html",
 +    "res/stgr/newtab/newtab.js",
