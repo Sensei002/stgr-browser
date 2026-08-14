@@ -15,15 +15,20 @@ Files changed:          browser/components/moz.build
                         browser/components/stgr/res/stgr/newtab/newtab.js     (staged)
                         browser/components/stgr/res/stgr/about/aboutStgr.html (staged)
                         browser/components/newtab/AboutNewTabRedirector.sys.mjs
+                        browser/installer/package-manifest.in        (ship res/stgr/* in the package)
 Security impact:        None. The override only changes which local resource about:newtab
                         resolves to; pages are static content with no privileged access.
 Performance impact:     Positive: replaces the heavy remote-rendered new tab with a few KB
                         of static HTML/CSS/JS. No idle timers beyond a local clock.
 Upstream compatibility: moz.build RESOURCE_FILES + DIST_SUBDIR are stable surfaces
-                        (editor/composer ships res/* exactly this way). The defaultURL
-                        getter shape is verified against the release branch; rebase risk
-                        LOW. Verify the packaged URL (resource://gre/res/stgr/) with the
-                        smoke test and the package-time omni.ja check.
+                        (editor/composer ships res/* exactly this way). The package
+                        manifest entry (@RESPATH@/res/stgr/*) is required: packager.py
+                        only copies files listed in browser/installer/package-manifest.in
+                        into the staged package / omni.ja (res/ files are enumerated
+                        explicitly, unlike modules/* which has a recursive glob). The
+                        defaultURL getter shape is verified against the release branch;
+                        rebase risk LOW. Verify the packaged URL (resource://gre/res/stgr/)
+                        with the smoke test and the package-time omni.ja check.
 
 diff --git a/browser/components/moz.build b/browser/components/moz.build
 --- a/browser/components/moz.build
@@ -92,3 +97,14 @@ diff --git a/browser/components/newtab/AboutNewTabRedirector.sys.mjs b/browser/c
      if (this.remoteRendererEnabled) {
        return "resource://newtab/data/content/remote-renderer-host.html";
      }
+
+diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
+--- a/browser/installer/package-manifest.in
++++ b/browser/installer/package-manifest.in
+@@ -338,4 +338,6 @@
+ ; svg
+ @RESPATH@/res/svg.css
++; STGR Browser UI resources (resource://gre/res/stgr/).
++@RESPATH@/res/stgr/*
+ 
+ ; [Layout Debugger]
