@@ -10,21 +10,24 @@ Security impact:        None removed. Safe Browsing, certificate services, updat
                         disabled (defense in depth). See docs/privacy.md for the audit.
 Performance impact:      Reduced idle network activity (prefetch/predictor off). Negligible.
 Upstream compatibility: firefox.js is touched by Mozilla every release; rebase risk MEDIUM.
-                        The insertion anchor (#filter directive + MPL header) has been stable
-                        for many releases; blocks between the markers must match
-                        stgr/config/preferences/*.js verbatim (lint_prefs_sync.py).
-                        NOTE: firefox.js is preprocessed (#filter) — the // marker comments
-                        are stripped at build time; the pref() lines are what ship.
+                        The blocks are appended at the END of firefox.js (after the final
+                        #endif), so every pref() here wins over stock defaults declared
+                        earlier in the file (e.g. browser.startup.homepage and
+                        browser.aboutwelcome.enabled, which stock re-defines later).
+                        Blocks between the markers must match stgr/config/preferences/*.js
+                        verbatim (lint_prefs_sync.py). NOTE: firefox.js is preprocessed
+                        (#filter) — the // marker comments are stripped at build time; the
+                        pref() lines are what ship.
 
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
 --- a/browser/app/profile/firefox.js
 +++ b/browser/app/profile/firefox.js
-@@ -1,7 +1,115 @@
- #filter dumbComments emptyLines substitution
+@@ -3624,5 +3624,113 @@
+ pref("distribution.mozillaonline.ignore", true);
  
- // This Source Code Form is subject to the terms of the Mozilla Public
- // License, v. 2.0. If a copy of the MPL was not distributed with this
- // file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ #ifdef XP_MACOSX
+   pref("browser.macAppMenu.setAsDefaultShown", false);
+ #endif
 +
 +// BEGIN STGR PREFS
 +
@@ -133,5 +136,3 @@ diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
 +// (browser.safebrowsing.*, browser.tabs.remote.*, app.update.* defaults are kept)
 +
 +// END STGR PRIVACY PREFS
- 
- // Non-static prefs that are specific to desktop Firefox belong in this file

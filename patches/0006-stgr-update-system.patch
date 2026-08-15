@@ -11,6 +11,10 @@ Security impact:        Update packages are validated (HTTPS, product, version, 
                         rejected. No silent execution of downloaded files.
 Performance impact:     None when idle — the module performs no background activity.
 Upstream compatibility: Uses stable ESM + fetch APIs; rebase risk LOW.
+                        IMPORTANT: Firefox 153 no longer ships
+                        resource://gre/modules/Services.sys.mjs — Services is a global in
+                        the ESM environment (stock modules use it without importing). DO NOT
+                        re-add the Services import; the module below relies on the global.
 Note:                   Full preferences-pane wiring is Phase 9 of the roadmap; v1 exposes
                         the same validation logic via scripts/check_update.py (CI + CLI).
 
@@ -35,7 +39,7 @@ diff --git a/browser/components/stgr/updater/STGRUpdater.sys.mjs b/browser/compo
 new file mode 100644
 --- /dev/null
 +++ b/browser/components/stgr/updater/STGRUpdater.sys.mjs
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,118 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,7 +58,6 @@ new file mode 100644
 + */
 +
 +import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-+import { Services } from "resource://gre/modules/Services.sys.mjs";
 +
 +const API = "https://api.github.com/repos/";
 +

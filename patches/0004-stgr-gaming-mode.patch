@@ -13,18 +13,26 @@ Security impact:        None. No security mitigation is disabled. Tabs playing a
 Performance impact:     When enabled: reduced background CPU/RAM/network by design.
 Upstream compatibility: browser-init.js (_delayedStartup) is the current main-window
                         startup hook (verified on the release branch); rebase risk MEDIUM.
-                        Verify the STGRGamingMode import and the browser.discard /
-                        TabUnloader API against the pinned Firefox version.
+                        Verify the STGRGamingMode import against the pinned Firefox version.
 Note:                   DEPENDENCY: must be applied AFTER 0002 — the firefox.js insertion
                         anchors on the "// END STGR PRIVACY PREFS" marker that 0002 injects
-                        (series order guarantees this). The injected block is the exact
-                        content of stgr/config/preferences/performance.js (enforced by
+                        at the END of firefox.js (series order guarantees this). The injected
+                        block is the exact content of
+                        stgr/config/preferences/performance.js (enforced by
                         lint_prefs_sync.py / --verify-prefs-sync).
+
+                        IMPORTANT: Firefox 153 no longer ships
+                        resource://gre/modules/Services.sys.mjs — Services is a global in
+                        the ESM environment (stock modules use it without importing, e.g.
+                        AboutNewTabRedirector), and XPCOMUtils no longer has
+                        defineLazyGetter (use ChromeUtils.defineLazyGetter instead).
+                        DO NOT re-add either; the module below relies on the Services
+                        global and imports only modules that exist in the pinned release.
 
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
 --- a/browser/app/profile/firefox.js
 +++ b/browser/app/profile/firefox.js
-@@ -112,3 +112,41 @@
+@@ -3736,1 +3736,39 @@
  // END STGR PRIVACY PREFS
 +
 +// BEGIN STGR PERFORMANCE PREFS
@@ -64,9 +72,6 @@ diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
 +pref("stgr.gamingMode.protect.webrtc", true);
 +
 +// END STGR PERFORMANCE PREFS
- 
- // Non-static prefs that are specific to desktop Firefox belong in this file
-
 diff --git a/browser/components/stgr/gamingmode/moz.build b/browser/components/stgr/gamingmode/moz.build
 new file mode 100644
 --- /dev/null
@@ -89,7 +94,7 @@ diff --git a/browser/components/stgr/gamingmode/STGRGamingMode.sys.mjs b/browser
 new file mode 100644
 --- /dev/null
 +++ b/browser/components/stgr/gamingmode/STGRGamingMode.sys.mjs
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,103 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -106,15 +111,6 @@ new file mode 100644
 + */
 +
 +import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-+import { Services } from "resource://gre/modules/Services.sys.mjs";
-+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-+
-+const lazy = {};
-+XPCOMUtils.defineLazyGetter(lazy, "TabUnloader", () => {
-+  return ChromeUtils.importESModule(
-+    "resource:///modules/TabUnloader.sys.mjs"
-+  );
-+});
 +
 +const PREF_ENABLED = "stgr.gamingMode.enabled";
 +const PREF_AUTOMATIC = "stgr.gamingMode.automatic";
