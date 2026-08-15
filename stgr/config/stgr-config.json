@@ -4,7 +4,7 @@
     "name": "STGR Browser",
     "brand": "STEiGER Dojo",
     "website": "https://steigerdojo.mvp.bd",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "update_channel": "stable",
     "source_repository": "https://github.com/Sensei002/stgr-browser",
     "update_repository": "https://github.com/Sensei002/stgr-browser"
