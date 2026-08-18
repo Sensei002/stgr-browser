@@ -82,7 +82,7 @@ jobs:
           }
 
       - name: Cache Firefox source (git objects)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: firefox/.git
           key: firefox-git-${{ runner.os }}
@@ -96,7 +96,7 @@ jobs:
       - name: Cache sccache
         # SCCACHE_DIR lives on C: (NOT runner.temp on D:) so the large D:
         # pagefile does not compete with the sccache disk usage.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: C:\sccache
           key: sccache-${{ runner.os }}-${{ github.sha }}
@@ -104,7 +104,7 @@ jobs:
             sccache-${{ runner.os }}-
 
       - name: Cache Cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
