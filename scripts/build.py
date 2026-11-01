@@ -342,9 +342,39 @@ def stamp_binary(exe: Path, brand: dict, version: str, internal: str, original: 
     )
 
 
-def stamp_engine(exe: Path, brand: dict, version: str) -> None:
-    ok = stamp_binary(exe, brand, version, "stgr", "stgr.exe")
-    log("engine resources stamped" if ok else "warning: engine resource stamping failed")
+def stamp_engine(app: Path, brand: dict, version: str) -> None:
+    """
+    Stamp every PE that can own the window icon.
+
+    On Windows the Chromium exe is a thin loader - the icon group that the
+    browser frame actually loads lives in chrome.dll. Stamping only stgr.exe
+    produces a build that reports success and still shows the Chromium logo in
+    the taskbar, which is exactly the bug this function used to have.
+    """
+    for name in ("stgr.exe", "chrome.dll", "chrome_proxy.exe"):
+        target = app / name
+        if not target.exists():
+            continue
+        ok = stamp_binary(target, brand, version, "stgr", name)
+        log(f"{name}: icon {'stamped' if ok else 'NOT stamped'}")
+
+
+def verify_icons(app: Path, brand: dict) -> None:
+    """Fail the build if the stamped PEs do not actually carry our icon."""
+    verifier = ROOT / "scripts" / "verify-icon.py"
+    ico = ROOT / brand["assets"]["iconIco"]
+    if not verifier.exists() or not ico.exists():
+        return
+    targets = [str(app / n) for n in ("stgr.exe", "chrome.dll") if (app / n).exists()]
+    if not targets:
+        return
+    log("verifying icon resources")
+    result = subprocess.run(
+        [sys.executable, str(verifier), "--ico", str(ico), *targets],
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        die("icon verification failed - the browser would still show the Chromium logo")
 
 
 def find_csc() -> str | None:
@@ -514,7 +544,8 @@ def assemble(brand: dict, version: str, revision: str, skip_fetch: bool) -> Path
     if not engine.exists():
         die(f"engine binary missing: {engine}")
     engine.rename(STAGE / "stgr.exe")
-    stamp_engine(STAGE / "stgr.exe", brand, version)
+    stamp_engine(STAGE, brand, version)
+    verify_icons(STAGE, brand)
 
     prefs = json.dumps(render_preferences(brand, version), indent=2)
     (STAGE / "initial_preferences").write_text(prefs, encoding="utf-8")

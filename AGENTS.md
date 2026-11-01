@@ -168,6 +168,14 @@ feature line to a profile and the earlier list stops applying, that merge has re
 binary to the payload, stamp it with `stamp_binary()` or the shortcut will show the generic
 "unknown file" icon.
 
+**The taskbar icon lives in `chrome.dll`, not the exe.** On Windows the Chromium exe is a
+thin loader; the icon group the browser frame loads is in `chrome.dll`. Stamping only
+`stgr.exe` gives you a build that reports success and still shows the Chromium logo in the
+taskbar — which is exactly what shipped in 0.1.0 through 0.1.2. `stamp_engine()` now stamps
+`stgr.exe`, `chrome.dll` and `chrome_proxy.exe`, and `scripts/verify-icon.py` reads the PE
+resource directory and **fails the build** if the icon did not actually take. Never remove
+that check; rcedit exits 0 whether or not it replaced the group the app loads.
+
 **Theme colours must be visible, not merely correct.** A `#08080A` frame is
 indistinguishable from plain dark mode, and users read that as "the theme didn't load". Push
 the toolbar to a warm red-black so the tint is obvious.

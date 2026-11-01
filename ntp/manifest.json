@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "STGR New Tab",
   "short_name": "STGR",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "The STGR Browser new tab page: speed dial, private search, zero network calls.",
   "chrome_url_overrides": {
     "newtab": "index.html"
