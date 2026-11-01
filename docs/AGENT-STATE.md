@@ -23,16 +23,24 @@ disagrees with the code, this file is stale — fix it.
 | Build orchestrator | Done | Full run green in CI, run 41280347362 |
 | NSIS installer | **Works** | 253,749,352 bytes, sha256 `94a10edb…` |
 | CI `validate` job | Green | Run 41279651720 |
-| `ci / installer compiles` | Fixed, awaiting verification | MSYS path-conversion fix |
-| Release workflow | Written | Never executed — needs a tag |
+| `ci / installer compiles` | Green | Run on `a1b7472` |
+| Release workflow | Written, untested | Needs a tag; publishing path never executed |
 | Stage 2 patch series | Scaffolded only | No patches written yet |
 
 ### The honest summary
 
-The Windows installer **builds end to end in CI**. Run `build-windows` #3 produced
-`STGR-Browser-Setup-0.1.0-x64.exe` (242 MiB) from a cold cache in about 9 minutes, with
-rcedit branding, the compiled launcher, and all three extensions staged. Nothing has been
-installed on a real machine yet — that is the next gate, not the next build.
+Both workflows are green on `main`. The Windows installer **builds end to end in CI** —
+`STGR-Browser-Setup-0.1.0-x64.exe`, 242 MiB, from a cold cache in about 9 minutes, with
+rcedit branding, the compiled launcher, and all three extensions staged.
+
+Two things this does *not* prove:
+
+1. **The installer has never been run.** Build success is not launch success. Install it,
+   launch it, check the four items in "What to do first".
+2. **Builds are not bit-reproducible.** Two builds of the same commit produced different
+   sha256 values (`94a10edb…` then `b1569597…`). NSIS embeds a timestamp and
+   `config/base.json` still resolves `latest`. Pin `base.lock.json` before treating a hash
+   as an identity.
 
 ---
 
