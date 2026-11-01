@@ -1,8 +1,8 @@
 {
-  "$comment": "Pinned Chromium base for Stage-1 (distribution) builds. See docs/decisions/ADR-0002-build-strategy.md. 'latest' resolves LAST_CHANGE from the snapshot bucket at fetch time and is then frozen into config/base.lock.json by CI.",
+  "$comment": "Pinned Chromium base for Stage-1 (distribution) builds. See docs/decisions/ADR-0002-build-strategy.md. The revision is pinned so two builds of the same commit ship the same engine; bump it deliberately and regenerate config/base.lock.json in the same commit.",
   "engine": "chromium",
   "channel": "snapshot",
-  "revision": "latest",
+  "revision": "1732362",
   "platforms": {
     "windows-x64": {
       "bucket": "Win_x64",
