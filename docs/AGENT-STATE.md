@@ -4,7 +4,7 @@ Machine-readable-ish snapshot of reality. Update this when you stop working. If 
 disagrees with the code, this file is stale — fix it.
 
 **Last updated:** 2026-11-01
-**Version:** 0.1.1
+**Version:** 0.1.3
 **Target:** Windows 10/11 x64 only
 
 ---
@@ -91,6 +91,29 @@ Two things this does *not* prove:
 ---
 
 ## Session log
+
+### 2026-11-01 (f) — taskbar icon, third attempt (this one is real)
+0.1.1 and 0.1.2 both stamped `stgr.exe` and the taskbar still showed the Chromium logo.
+The cause: on Windows the Chromium exe is a **thin loader**. The icon group the browser
+frame actually loads is `IDR_MAINFRAME` (resource 101) inside `chrome.dll`, which was never
+touched. rcedit exits 0 either way, so nothing looked wrong.
+
+Fix: `stamp_engine()` stamps `stgr.exe`, `chrome.dll` and `chrome_proxy.exe`. Verified in the
+0.1.3 build log:
+
+```
+MATCH   stgr.exe group 0: STGR icon present
+MATCH   chrome.dll group 101: STGR icon present
+OK: all files carry the STGR icon
+```
+
+`scripts/verify-icon.py` is new and is what produced those lines. It parses the PE resource
+directory and compares icon dimensions against our `.ico`. It was validated against a real
+Chromium binary (`msedge.exe`), which it correctly rejects. **Do not remove it** — a
+wrong icon is invisible until a human looks at their taskbar, which is how this took three
+releases to find.
+
+Also deleted the superseded 0.1.1 and 0.1.2 releases and tags. Only `v0.1.3` exists.
 
 ### 2026-11-01 (e) — startup tab, take two
 0.1.1 fixed the icon and the theme, but the first tab *still* showed Chromium's built-in new
