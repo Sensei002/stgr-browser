@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+<title>STGR Shield</title>
+</head>
+<body>
+  <header class="head">
+    <img src="icons/48.png" alt="" class="mark">
+    <div>
+      <h1>STGR Shield</h1>
+      <p id="rule-count">Loading rules…</p>
+    </div>
+    <label class="switch" title="Toggle blocking">
+      <input type="checkbox" id="toggle" checked>
+      <span></span>
+    </label>
+  </header>
+
+  <dl class="stats">
+    <div><dt>Blocked on this tab</dt><dd id="blocked-tab">0</dd></div>
+    <div><dt>Engine</dt><dd>Network-level</dd></div>
+    <div><dt>Filter lists</dt><dd id="list-state">Compiled</dd></div>
+  </dl>
+
+  <p class="note">Rules ship with the browser. Nothing is downloaded at runtime and no request metadata leaves this device.</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

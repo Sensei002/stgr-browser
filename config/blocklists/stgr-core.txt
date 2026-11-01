@@ -1,0 +1,122 @@
+# STGR Shield - core blocklist (hosts format)
+# Curated, hand-audited seed list. It exists so the shield is functional on a
+# machine with no network and so CI has a deterministic minimum to test against.
+# Broad lists are pulled in by scripts/build-shield-rules.py via sources.json.
+#
+# Format: 0.0.0.0 <domain>     (one domain per line, subdomains covered)
+# Rule:   add a domain only when it serves ads/tracking. Never block a domain
+#         that also serves content - a broken site is worse than an ad.
+
+# --- Google advertising & analytics -----------------------------------------
+0.0.0.0 doubleclick.net
+0.0.0.0 googleadservices.com
+0.0.0.0 googlesyndication.com
+0.0.0.0 googletagmanager.com
+0.0.0.0 googletagservices.com
+0.0.0.0 adservice.google.com
+0.0.0.0 pagead2.googlesyndication.com
+0.0.0.0 partner.googleadservices.com
+0.0.0.0 ssl.google-analytics.com
+0.0.0.0 google-analytics.com
+0.0.0.0 analytics.google.com
+0.0.0.0 stats.g.doubleclick.net
+
+# --- Major ad exchanges ------------------------------------------------------
+0.0.0.0 adnxs.com
+0.0.0.0 adsrvr.org
+0.0.0.0 rubiconproject.com
+0.0.0.0 pubmatic.com
+0.0.0.0 openx.net
+0.0.0.0 casalemedia.com
+0.0.0.0 criteo.com
+0.0.0.0 criteo.net
+0.0.0.0 taboola.com
+0.0.0.0 outbrain.com
+0.0.0.0 revcontent.com
+0.0.0.0 mgid.com
+0.0.0.0 smartadserver.com
+0.0.0.0 33across.com
+0.0.0.0 sharethrough.com
+0.0.0.0 triplelift.com
+0.0.0.0 bidswitch.net
+0.0.0.0 yieldmo.com
+0.0.0.0 amazon-adsystem.com
+0.0.0.0 media.net
+0.0.0.0 adroll.com
+0.0.0.0 quantserve.com
+0.0.0.0 scorecardresearch.com
+
+# --- Analytics & session replay ---------------------------------------------
+0.0.0.0 hotjar.com
+0.0.0.0 hotjar.io
+0.0.0.0 fullstory.com
+0.0.0.0 mouseflow.com
+0.0.0.0 clarity.ms
+0.0.0.0 mixpanel.com
+0.0.0.0 amplitude.com
+0.0.0.0 segment.io
+0.0.0.0 segment.com
+0.0.0.0 heap.io
+0.0.0.0 matomo.cloud
+0.0.0.0 newrelic.com
+0.0.0.0 nr-data.net
+0.0.0.0 sentry.io
+0.0.0.0 bugsnag.com
+0.0.0.0 branch.io
+0.0.0.0 appsflyer.com
+0.0.0.0 adjust.com
+0.0.0.0 kochava.com
+
+# --- Social pixels -----------------------------------------------------------
+0.0.0.0 connect.facebook.net
+0.0.0.0 pixel.facebook.com
+0.0.0.0 analytics.tiktok.com
+0.0.0.0 ads-twitter.com
+0.0.0.0 static.ads-twitter.com
+0.0.0.0 analytics.twitter.com
+0.0.0.0 snap.licdn.com
+0.0.0.0 px.ads.linkedin.com
+0.0.0.0 sc-static.net
+0.0.0.0 tr.snapchat.com
+
+# --- Push / notification spam ------------------------------------------------
+0.0.0.0 onesignal.com
+0.0.0.0 pushengage.com
+0.0.0.0 pushnami.com
+0.0.0.0 cleverpush.com
+0.0.0.0 sendpulse.com
+
+# --- Pop-under / redirect networks ------------------------------------------
+0.0.0.0 popads.net
+0.0.0.0 popcash.net
+0.0.0.0 propellerads.com
+0.0.0.0 propellerclick.com
+0.0.0.0 onclickads.net
+0.0.0.0 onclickmax.com
+0.0.0.0 adcash.com
+0.0.0.0 exoclick.com
+0.0.0.0 juicyads.com
+0.0.0.0 trafficjunky.net
+0.0.0.0 hilltopads.net
+
+# --- Crypto miners -----------------------------------------------------------
+0.0.0.0 coin-hive.com
+0.0.0.0 coinhive.com
+0.0.0.0 authedmine.com
+0.0.0.0 cryptoloot.pro
+0.0.0.0 webminepool.com
+
+# --- Misc trackers -----------------------------------------------------------
+0.0.0.0 adsymptotic.com
+0.0.0.0 bluekai.com
+0.0.0.0 demdex.net
+0.0.0.0 everesttech.net
+0.0.0.0 exelator.com
+0.0.0.0 krxd.net
+0.0.0.0 liadm.com
+0.0.0.0 ml314.com
+0.0.0.0 tapad.com
+0.0.0.0 tidaltv.com
+0.0.0.0 tribalfusion.com
+0.0.0.0 turn.com
+0.0.0.0 zeotap.com

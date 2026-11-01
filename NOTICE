@@ -1,0 +1,34 @@
+STGR Browser
+Copyright (c) 2026 STGR
+
+This product includes Chromium, which is licensed under the BSD 3-Clause
+License and a set of additional permissive licences covering third-party
+components. The complete licence text for a given build is available inside
+the application at:
+
+    chrome://credits
+
+and in the LICENSE file shipped alongside the engine binary.
+
+Chromium project:      https://www.chromium.org
+Chromium licence:      https://chromium.googlesource.com/chromium/src/+/main/LICENSE
+Snapshot builds used:  https://storage.googleapis.com/chromium-browser-snapshots/
+
+The Chromium binaries in this distribution are used unmodified except for
+Windows version resources (icon, product name, file description) applied with
+rcedit at packaging time. No engine source has been patched.
+
+---
+
+Third-party components used by the STGR layer
+
+Pillow (PIL)                    MIT-CMU       Icon and installer art generation
+NSIS                            zlib/libpng   Windows installer
+rcedit                          MIT           Windows executable resource editing
+StevenBlack hosts               MIT           Optional blocklist source
+DuckDuckGo                      -             Default search engine (not bundled)
+
+Bundled blocklist data in config/blocklists/stgr-core.txt is original to this
+project. Remote list sources and their licences are declared in
+config/blocklists/sources.json; GPL-licensed lists are disabled by default
+because their obligations are incompatible with shipping a closed binary.

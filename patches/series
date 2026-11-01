@@ -1,0 +1,11 @@
+# Ordered patch series for the Chromium source build (Stage 2).
+# Format: quilt-style, one filename per line, applied in order.
+# See README.md in this directory. Nothing is applied today - the files do not
+# exist yet, and .github/workflows/build-from-source.yml is workflow_dispatch only.
+#
+# 0001-branding-strings.patch
+# 0002-branding-assets.patch
+# 0003-default-prefs.patch
+# 0004-disable-telemetry.patch
+# 0005-custom-toolbar.patch
+# 0006-sidebar-rail.patch

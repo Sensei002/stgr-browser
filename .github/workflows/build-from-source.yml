@@ -1,0 +1,135 @@
+name: build-from-source
+
+# STAGE 2 SCAFFOLD - not runnable on GitHub-hosted runners.
+#
+# A Chromium source build needs ~100 GB of disk and 32+ cores. Hosted runners
+# provide 14 GB and 4 cores. This workflow therefore targets a self-hosted
+# runner with the label "chromium-builder" and is dispatch-only so it can never
+# fire by accident on a tag and block a release.
+#
+# Runner recipe (see docs/ROADMAP.md section 2.1):
+#   Windows Server 2022, 32 vCPU, 64 GB RAM, 500 GB NVMe
+#   depot_tools on PATH, gclient configured
+#   labels: self-hosted, windows, chromium-builder
+#
+# Do not enable this on a tag until patches/series contains real patches and the
+# incremental build time has been measured.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "build-chromium" to acknowledge a 5+ hour build'
+        type: string
+        required: true
+      sync:
+        description: "Run gclient sync (disable to reuse an existing checkout)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        if: inputs.confirm != 'build-chromium'
+        run: |
+          echo "::error::This builds Chromium from source and takes 5+ hours."
+          exit 1
+
+      - name: Require a non-empty patch series
+        run: |
+          if ! grep -qE '^[0-9]{4}-.*\.patch$' patches/series 2>/dev/null; then
+            echo "::error::patches/series has no active patches - Stage 2 has not started."
+            exit 1
+          fi
+
+  build:
+    needs: guard
+    runs-on: [self-hosted, windows, chromium-builder]
+    timeout-minutes: 600
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v gclient >/dev/null || { echo "::error::depot_tools not on PATH"; exit 1; }
+          df -h . | tail -1
+          echo "free disk above must exceed 100 GB"
+
+      - name: Sync engine
+        if: inputs.sync
+        shell: bash
+        working-directory: ${{ runner.workspace }}
+        run: |
+          set -euo pipefail
+          if [ ! -d chromium/src ]; then
+            fetch --nohooks --no-history chromium
+          fi
+          cd chromium
+          gclient sync --no-history -D
+
+      - name: Apply STGR patch series
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ runner.workspace }}/chromium/src"
+          while IFS= read -r patch; do
+            case "$patch" in ''|'#'*) continue ;; esac
+            echo "applying $patch"
+            git apply --3way "$GITHUB_WORKSPACE/patches/$patch"
+          done < "$GITHUB_WORKSPACE/patches/series"
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ runner.workspace }}/chromium/src"
+          # Object cache lives outside the checkout so it survives a clean sync.
+          cat > out/Release/args.gn <<'EOF'
+          is_official_build = true
+          is_component_build = false
+          symbol_level = 0
+          blink_symbol_level = 0
+          use_thin_lto = true
+          enable_nacl = false
+          chrome_pgo_phase = 0
+          is_chrome_branded = false
+          EOF
+          gn gen out/Release
+
+      - name: Compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ runner.workspace }}/chromium/src"
+          autoninja -C out/Release chrome
+
+      - name: Stage for packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="${{ runner.workspace }}/chromium/src/out/Release"
+          mkdir -p build/base/chrome-win
+          cp -r "$SRC"/* build/base/chrome-win/
+          rm -rf build/base/chrome-win/obj build/base/chrome-win/gen
+          du -sh build/base/chrome-win
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pillow
+          python scripts/build.py --skip-fetch
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-source-build
+          path: dist/*.exe
+          if-no-files-found: error

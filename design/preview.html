@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STGR Browser — full window preview</title>
+<!--
+  Design reference, not shipped code.
+
+  Stage 1 can only restyle upstream Chromium chrome (tab strip, toolbar) via the
+  theme extension, and can only replace the content area (the NTP). This page
+  shows the intended composition of both so Stage 2 has a pixel target:
+    .chrome  -> patches/0005-custom-toolbar.patch + 0006-sidebar-rail.patch
+    iframe   -> ntp/index.html (already shipped)
+-->
+<style>
+  :root {
+    --red: #e01a24;
+    --red-bright: #ff2d3a;
+    --gold: #e3b563;
+    --black: #08080a;
+    --surface: #101014;
+    --surface-alt: #17171c;
+    --border: #26262e;
+    --text: #f2f2f4;
+    --muted: #9a9aa6;
+    --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #050507;
+    color: var(--text);
+    font-family: var(--font);
+    display: flex;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .window {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--black);
+    border: 1px solid #1e1e26;
+  }
+
+  /* ── tab strip ─────────────────────────────────────────────────────── */
+  .tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 40px;
+    padding: 0 8px;
+    background: linear-gradient(180deg, #0b0b0f, #08080a);
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    -webkit-app-region: drag;
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 10px;
+    max-width: 240px;
+    border-radius: 8px 8px 0 0;
+    background: #15151b;
+    color: #cfcfd8;
+    font-size: 12px;
+    border: 1px solid rgba(255,255,255,.06);
+    border-bottom: none;
+  }
+  .tab.is-active {
+    background: #1c1c23;
+    color: #fff;
+    position: relative;
+  }
+  .tab.is-active::after {
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: -1px;
+    height: 2px;
+    background: var(--red);
+    box-shadow: 0 0 10px rgba(224,26,36,.7);
+  }
+  .tab img { width: 14px; height: 14px; }
+  .tab .x { margin-left: 6px; opacity: .45; font-size: 13px; line-height: 1; }
+  .tab-add {
+    width: 26px; height: 26px; margin-bottom: 2px;
+    display: grid; place-items: center;
+    border: 0; background: transparent; color: #8d8d99;
+    font-size: 16px; cursor: pointer; border-radius: 6px;
+  }
+  .tab-add:hover { background: rgba(255,255,255,.06); }
+  .win-buttons { margin-left: auto; display: flex; gap: 14px; color: #9a9aa6; font-size: 12px; padding-bottom: 6px; }
+
+  /* ── toolbar ───────────────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 12px;
+    background: var(--surface);
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+  .icon-btn {
+    width: 30px; height: 30px;
+    display: grid; place-items: center;
+    border: 0; border-radius: 7px;
+    background: transparent; color: #c9c9d2;
+    cursor: pointer;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,.07); }
+  .icon-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn:disabled { opacity: .32; }
+
+  .omnibox {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 999px;
+    background: #0c0c10;
+    font-size: 13px;
+    color: #b6b6c1;
+    min-width: 0;
+  }
+  .omnibox .lock { color: #6f6f7c; font-size: 11px; }
+  .omnibox .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .omnibox .shield { margin-left: auto; color: #3fbf6a; display: grid; place-items: center; }
+  .omnibox .shield svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+  .divider { width: 1px; height: 20px; background: rgba(255,255,255,.08); }
+
+  /* ── content ───────────────────────────────────────────────────────── */
+  .content { flex: 1; min-height: 0; position: relative; background: var(--black); }
+  .content iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+  .hint {
+    position: absolute; right: 12px; top: 10px;
+    font-size: 10px; letter-spacing: .04em;
+    color: #5c5c68;
+    background: rgba(8,8,10,.72);
+    padding: 4px 8px; border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.06);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="tabs">
+    <div class="tab is-active">
+      <img src="../ntp/assets/icon-32.png" alt="">
+      <span>New Tab</span>
+      <span class="x">&#10005;</span>
+    </div>
+    <div class="tab">
+      <span style="width:14px;height:14px;border-radius:50%;background:#2a2a34;display:inline-block"></span>
+      <span>GitHub</span>
+      <span class="x">&#10005;</span>
+    </div>
+    <button class="tab-add" title="New tab">+</button>
+    <div class="win-buttons"><span>&#8211;</span><span>&#9633;</span><span>&#10005;</span></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="icon-btn" disabled title="Back">
+      <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button class="icon-btn" disabled title="Forward">
+      <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+    <button class="icon-btn" title="Reload">
+      <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg>
+    </button>
+    <button class="icon-btn" title="Home">
+      <svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>
+    </button>
+
+    <div class="omnibox">
+      <span class="lock">&#128274;</span>
+      <span class="url">stgr://newtab/</span>
+      <span class="shield" title="STGR Shield is active">
+        <svg viewBox="0 0 24 24"><path d="M12 2 4 5v7c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V5z"/><path d="m8.5 12 2.6 2.6L16 9.6"/></svg>
+      </span>
+    </div>
+
+    <button class="icon-btn" title="Bookmark">
+      <svg viewBox="0 0 24 24"><path d="M12 4l2.5 5.2 5.5.8-4 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4-3.9 5.5-.8z"/></svg>
+    </button>
+    <div class="divider"></div>
+    <button class="icon-btn" title="Extensions">
+      <svg viewBox="0 0 24 24"><path d="M9 4h6v3.5a2 2 0 1 0 0 3V14H9"/><path d="M9 4v6.5a2 2 0 1 1 0 3V20h6v-3.5a2 2 0 1 1 0-3"/></svg>
+    </button>
+    <button class="icon-btn" title="Menu">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+
+  <div class="content">
+    <iframe src="../ntp/index.html" title="STGR New Tab Page"></iframe>
+    <div class="hint">DESIGN REFERENCE — chrome is Stage 2</div>
+  </div>
+</div>
+</body>
+</html>

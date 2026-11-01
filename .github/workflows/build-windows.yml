@@ -1,0 +1,160 @@
+name: build-windows
+
+# Tag push  -> builds and publishes the installer to GitHub Releases.
+# Manual    -> builds and uploads a workflow artifact only (no release).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to GitHub Releases (tag builds always publish)"
+        type: boolean
+        default: false
+      version:
+        description: "Override version (defaults to VERSION file)"
+        type: string
+        default: ""
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  build:
+    name: build installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --quiet --upgrade pillow
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="$(tr -d '[:space:]' < VERSION)"
+          fi
+          echo "STGR_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
+          echo "building $VERSION"
+
+      - name: Cache Chromium base
+        uses: actions/cache@v4
+        with:
+          path: .cache/base
+          key: chromium-win64-${{ hashFiles('config/base.lock.json') }}
+          restore-keys: |
+            chromium-win64-
+
+      - name: Regenerate brand assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python branding/generate-icons.py
+          python scripts/gen-installer-art.py
+          python scripts/gen-ntp-config.py
+          python scripts/build-shield-rules.py
+
+      - name: Build installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build.py --clean
+          ls -la dist
+
+      - name: Checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum *.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Build summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## STGR Browser $STGR_VERSION"
+            echo ""
+            if [ -f build/app/stgr-build.json ]; then
+              echo '```json'
+              cat build/app/stgr-build.json
+              echo '```'
+            fi
+            if [ -f dist/SHA256SUMS.txt ]; then
+              echo ""
+              echo '```'
+              cat dist/SHA256SUMS.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stgr-browser-windows-${{ env.STGR_VERSION }}
+          path: |
+            dist/*.exe
+            dist/latest.json
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release
+        if: github.ref_type == 'tag' || inputs.publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="$TAG"
+          cat > release-notes.md <<EOF
+          **STGR Browser ${STGR_VERSION}** — Host. Compete. Broadcast.
+
+          Chromium-based, telemetry-free, ad-blocked at the network layer, built for low memory use.
+
+          ### Install
+          1. Download \`STGR-Browser-Setup-${STGR_VERSION}-x64.exe\`
+          2. Run it — per-user install, no administrator prompt
+          3. First launch seeds a fresh profile; your other browsers are untouched
+
+          ### Notes
+          - Windows 10/11 x64
+          - Unsigned build: SmartScreen will warn on first run (More info → Run anyway)
+          - Verify the download against \`SHA256SUMS.txt\`
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.exe dist/latest.json dist/SHA256SUMS.txt --clobber
+          else
+            gh release create "$TAG" \
+              --title "STGR Browser ${STGR_VERSION}" \
+              --notes-file release-notes.md \
+              --latest \
+              dist/*.exe dist/latest.json dist/SHA256SUMS.txt
+          fi

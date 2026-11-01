@@ -1,0 +1,49 @@
+{
+  "$comment": "Pinned Chromium base for Stage-1 (distribution) builds. See docs/decisions/ADR-0002-build-strategy.md. 'latest' resolves LAST_CHANGE from the snapshot bucket at fetch time and is then frozen into config/base.lock.json by CI.",
+  "engine": "chromium",
+  "channel": "snapshot",
+  "revision": "latest",
+  "platforms": {
+    "windows-x64": {
+      "bucket": "Win_x64",
+      "archive": "chrome-win.zip",
+      "archiveType": "zip",
+      "root": "chrome-win",
+      "binary": "chrome.exe"
+    },
+    "windows-arm64": {
+      "bucket": "Win_Arm64",
+      "archive": "chrome-win.zip",
+      "archiveType": "zip",
+      "root": "chrome-win",
+      "binary": "chrome.exe"
+    },
+    "macos-x64": {
+      "bucket": "Mac",
+      "archive": "chrome-mac.zip",
+      "archiveType": "zip",
+      "root": "chrome-mac",
+      "app": "Chromium.app",
+      "binary": "Chromium.app/Contents/MacOS/Chromium"
+    },
+    "macos-arm64": {
+      "bucket": "Mac_Arm",
+      "archive": "chrome-mac.zip",
+      "archiveType": "zip",
+      "root": "chrome-mac",
+      "app": "Chromium.app",
+      "binary": "Chromium.app/Contents/MacOS/Chromium"
+    },
+    "linux-x64": {
+      "bucket": "Linux_x64",
+      "archive": "chrome-linux.zip",
+      "archiveType": "zip",
+      "root": "chrome-linux",
+      "binary": "chrome"
+    }
+  },
+  "endpoints": {
+    "snapshotBase": "https://storage.googleapis.com/chromium-browser-snapshots",
+    "lastChangeFile": "LAST_CHANGE"
+  }
+}

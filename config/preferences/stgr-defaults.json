@@ -1,0 +1,141 @@
+{
+  "$comment": "Default profile preferences, written into the shipped profile template. Keys are real Chromium pref paths - validate against chrome://prefs-internals after any change. Unknown keys are silently ignored by Chromium, so a typo fails quietly: always diff behaviour after editing.",
+
+  "browser": {
+    "show_home_button": true,
+    "has_seen_welcome_page": true,
+    "check_default_browser": false,
+    "theme": {
+      "color_scheme": 0,
+      "follows_system_colors": false,
+      "use_system_theme": false
+    }
+  },
+
+  "homepage": "stgr://newtab/",
+  "homepage_is_newtabpage": true,
+  "session": {
+    "restore_on_startup": 5,
+    "startup_urls": []
+  },
+  "newtab_page_location_override": "stgr://newtab/",
+
+  "bookmark_bar": {
+    "show_on_all_tabs": false,
+    "show_tab_groups": false
+  },
+
+  "enable_do_not_track": true,
+  "smooth_scrolling": true,
+  "hardware_acceleration_mode": { "enabled": true },
+  "alternate_error_pages": { "enabled": false },
+
+  "net": {
+    "network_prediction_options": 2,
+    "http_auth": { "allow_default_credentials": 0 }
+  },
+
+  "search": {
+    "suggest_enabled": false
+  },
+
+  "profile": {
+    "default_content_setting_values": {
+      "notifications": 2,
+      "geolocation": 1,
+      "media_stream_camera": 1,
+      "media_stream_mic": 1,
+      "autoplay": 2,
+      "sound": 1,
+      "popups": 1,
+      "background_sync": 2,
+      "sensors": 2,
+      "payment_handler": 2,
+      "idle_detection": 2
+    },
+    "default_content_settings": {
+      "popups": 1
+    },
+    "password_manager_enabled": false,
+    "password_manager_leak_detection": false
+  },
+
+  "credentials_enable_service": false,
+  "credentials_enable_autosignin": false,
+
+  "autofill": {
+    "profile_enabled": false,
+    "credit_card_enabled": false,
+    "enabled": false
+  },
+
+  "payments": {
+    "can_make_payment": false
+  },
+
+  "signin": {
+    "allowed": false,
+    "allowed_on_next_startup": false
+  },
+
+  "sync": {
+    "requested": false
+  },
+
+  "translate": {
+    "enabled": true
+  },
+
+  "printing": {
+    "print_preview_disabled": false
+  },
+
+  "download": {
+    "prompt_for_download": false,
+    "open_pdf_in_system_reader": false
+  },
+
+  "plugins": {
+    "always_open_pdf_externally": false
+  },
+
+  "performance_tuning": {
+    "high_efficiency_mode": {
+      "state": 2
+    }
+  },
+
+  "privacy_sandbox": {
+    "m1": {
+      "topics_enabled": false,
+      "fledge_enabled": false,
+      "ad_measurement_enabled": false
+    },
+    "m1_ad_measurement_enabled": false,
+    "m1_topics_enabled": false,
+    "m1_fledge_enabled": false,
+    "first_party_sets_enabled": false,
+    "ap_prefs": {
+      "privacy_sandbox_ads_apis_enabled": false
+    }
+  },
+
+  "user_experience_metrics": {
+    "reporting_enabled": false
+  },
+
+  "enable_metrics_reporting": false,
+  "spellcheck": {
+    "use_spelling_service": false
+  },
+
+  "intl": {
+    "accept_languages": "en-US,en"
+  },
+
+  "extensions": {
+    "ui": {
+      "developer_mode": false
+    }
+  }
+}

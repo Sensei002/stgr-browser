@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "STGR Dark",
+  "version": "1.0.0",
+  "description": "STGR Browser default theme - red, black and gold.",
+  "theme": {
+    "colors": {
+      "frame": [8, 8, 10],
+      "frame_inactive": [12, 12, 16],
+      "frame_incognito": [8, 8, 10],
+      "frame_incognito_inactive": [12, 12, 16],
+      "toolbar": [16, 16, 20],
+      "tab_text": [242, 242, 244],
+      "tab_background_text": [154, 154, 166],
+      "tab_background_text_inactive": [120, 120, 132],
+      "tab_background_text_incognito": [154, 154, 166],
+      "bookmark_text": [201, 201, 210],
+      "ntp_background": [8, 8, 10],
+      "ntp_text": [242, 242, 244],
+      "ntp_link": [224, 26, 36],
+      "button_background": [16, 16, 20],
+      "toolbar_button_icon": [201, 201, 210],
+      "omnibox_background": [22, 22, 28],
+      "omnibox_text": [242, 242, 244]
+    },
+    "tints": {
+      "buttons": [-1, -1, -1]
+    },
+    "properties": {
+      "ntp_logo_alternate": 1
+    }
+  }
+}

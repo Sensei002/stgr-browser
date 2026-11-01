@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "STGR New Tab",
+  "short_name": "STGR",
+  "version": "0.1.0",
+  "description": "The STGR Browser new tab page: speed dial, private search, zero network calls.",
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "minimum_chrome_version": "120",
+  "offline_enabled": true,
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  }
+}

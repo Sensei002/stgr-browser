@@ -1,0 +1,147 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --quiet pillow
+
+      - name: Python syntax check
+        run: python -m compileall -q scripts branding
+
+      - name: JSON is well formed
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r f; do
+            python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f" \
+              || { echo "invalid JSON: $f"; fail=1; }
+          done < <(git ls-files '*.json')
+          exit $fail
+
+      - name: brand.json has every required key
+        run: python scripts/check-brand.py
+
+      - name: Icon pipeline is reproducible
+        run: |
+          set -euo pipefail
+          python branding/generate-icons.py
+          python scripts/gen-installer-art.py
+          test -s branding/icons/stgr.ico
+          test -s branding/icons/stgr.icns
+          test -s branding/icons/png/1024.png
+          python - <<'PY'
+          import struct, pathlib
+          ico = pathlib.Path("branding/icons/stgr.ico").read_bytes()
+          reserved, kind, count = struct.unpack("<HHH", ico[:6])
+          assert (reserved, kind) == (0, 1), "not an ICO"
+          assert count >= 5, f"only {count} icon sizes"
+          icns = pathlib.Path("branding/icons/stgr.icns").read_bytes()
+          assert icns[:4] == b"icns", "not an ICNS"
+          print(f"ico ok ({count} sizes), icns ok")
+          PY
+
+      - name: NTP config generation
+        run: |
+          set -euo pipefail
+          python scripts/gen-ntp-config.py
+          python - <<'PY'
+          import json, pathlib, re
+          cfg = pathlib.Path("ntp/config.js").read_text(encoding="utf-8")
+          payload = cfg.split("=", 1)[1].rstrip().rstrip(";")
+          data = json.loads(payload)
+          assert data["speedDial"], "speed dial is empty"
+          manifest = json.loads(pathlib.Path("ntp/manifest.json").read_text(encoding="utf-8"))
+          assert manifest["version"] == data["version"], "manifest/version drift"
+          print(f"ntp ok: {len(data['speedDial'])} tiles, v{data['version']}")
+          PY
+
+      - name: Shield ruleset compiles
+        run: |
+          set -euo pipefail
+          python scripts/build-shield-rules.py --offline
+          python - <<'PY'
+          import json, pathlib
+          rules = json.loads(pathlib.Path("extensions/stgr-shield/rules/ruleset-0.json").read_text())
+          assert len(rules) > 50, "ruleset suspiciously small"
+          ids = [r["id"] for r in rules]
+          assert len(ids) == len(set(ids)), "duplicate rule ids"
+          for r in rules[:50]:
+              assert r["action"]["type"] == "block"
+              assert r["condition"]["urlFilter"].startswith("||")
+          print(f"shield ok: {len(rules)} rules")
+          PY
+
+      - name: JS syntax check
+        run: |
+          set -euo pipefail
+          for f in ntp/app.js ntp/config.js extensions/stgr-shield/sw.js extensions/stgr-shield/popup.js; do
+            node --check "$f"
+          done
+          echo "js ok"
+
+      - name: Flag profiles resolve
+        run: |
+          set -euo pipefail
+          for p in balanced lowmem debug; do
+            n=$(python scripts/build.py --print-flags "$p" | wc -l)
+            echo "$p -> $n switches"
+            test "$n" -gt 10
+          done
+
+      - name: NSIS script is referenced and present
+        run: test -s overrides/windows/installer.nsi
+
+  installer-dryrun:
+    name: installer compiles
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --quiet pillow
+
+      - name: Syntax-check the build orchestrator
+        shell: bash
+        run: python -m py_compile scripts/build.py
+
+      - name: Compile the installer script only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/stub/src build/stub/out
+          cp overrides/windows/installer.nsi build/stub/
+          echo "stub payload" > build/stub/src/payload.txt
+          "/c/Program Files (x86)/NSIS/makensis.exe" /V2 \
+            /DVERSION=0.0.0 /DVI_VERSION=0.0.0.0 \
+            /DSRCDIR="$PWD/build/stub/src" \
+            /DOUTFILE="$PWD/build/stub/out/stub.exe" \
+            build/stub/installer.nsi
+          test -s build/stub/out/stub.exe
+          echo "nsis ok"

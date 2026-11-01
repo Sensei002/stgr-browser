@@ -1,0 +1,20 @@
+# Build artefacts
+build/
+dist/
+.cache/
+*.pyc
+__pycache__/
+*.log
+
+# Local scratch
+.venv/
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Generated files that ARE committed on purpose - do not add them here:
+#   ntp/config.js
+#   ntp/manifest.json
+#   extensions/stgr-shield/rules/*.json
+#   branding/icons/**
+#   overrides/windows/*.bmp

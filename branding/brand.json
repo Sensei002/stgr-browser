@@ -1,0 +1,91 @@
+{
+  "$comment": "SINGLE SOURCE OF TRUTH for STGR Browser branding. Every build script, installer and web asset reads this file. Do not hardcode the product name, IDs or colours anywhere else.",
+  "schemaVersion": 1,
+
+  "product": {
+    "name": "STGR Browser",
+    "shortName": "STGR",
+    "legalName": "STGR Browser",
+    "executable": "stgr",
+    "executableWindows": "stgr.exe",
+    "bundleId": "com.stgr.browser",
+    "bundleName": "STGR Browser.app",
+    "appIdWindows": "com.stgr.browser",
+    "protocol": "stgr",
+    "tagline": "Host. Compete. Broadcast.",
+    "description": "A privacy-first Chromium browser built for speed, low memory use and competitive gaming.",
+    "vendor": "STGR",
+    "copyright": "Copyright (c) 2026 STGR. All rights reserved.",
+    "homepage": "https://github.com/stgr-browser/stgr-browser",
+    "repository": "https://github.com/stgr-browser/stgr-browser",
+    "issuesUrl": "https://github.com/stgr-browser/stgr-browser/issues",
+    "license": "MIT (STGR code) / BSD-3-Clause (Chromium components)"
+  },
+
+  "versions": {
+    "$comment": "STGR_VERSION is derived in CI from the git tag. Chromium version comes from the pinned base in config/base.json.",
+    "initial": "0.1.0",
+    "channel": "stable"
+  },
+
+  "engines": {
+    "engine": "Chromium",
+    "engineMarketingName": "Chromium",
+    "profileDirectory": "STGR"
+  },
+
+  "colors": {
+    "red": "#E01A24",
+    "redBright": "#FF2D3A",
+    "redDeep": "#8C0E14",
+    "gold": "#E3B563",
+    "black": "#08080A",
+    "surface": "#101014",
+    "surfaceAlt": "#17171C",
+    "border": "#26262E",
+    "text": "#F2F2F4",
+    "muted": "#9A9AA6"
+  },
+
+  "theme": {
+    "$comment": "Consumed by extensions/stgr-theme/manifest.json generation and the NTP stylesheet.",
+    "frame": "#08080A",
+    "frameInactive": "#0C0C10",
+    "toolbar": "#101014",
+    "tabText": "#C9C9D2",
+    "tabBackground": "#0C0C10",
+    "ntpBackground": "#08080A"
+  },
+
+  "assets": {
+    "logoMaster": "branding/source/logo-original.png",
+    "logoTrimmed": "branding/icons/logo-trimmed.png",
+    "iconIco": "branding/icons/stgr.ico",
+    "iconIcns": "branding/icons/stgr.icns",
+    "iconPngMaster": "branding/icons/png/1024.png",
+    "ntpLogo": "ntp/assets/logo.png"
+  },
+
+  "urls": {
+    "newTab": "stgr://newtab/",
+    "searchSuggestions": "https://suggestqueries.google.com/complete/search?client=firefox&q={query}",
+    "defaultSearchEngine": "DuckDuckGo",
+    "releaseFeed": "https://github.com/stgr-browser/stgr-browser/releases/latest/download/latest.json"
+  },
+
+  "speedDial": [
+    { "label": "YouTube", "url": "https://www.youtube.com", "icon": "youtube", "color": "#FF0033" },
+    { "label": "GitHub", "url": "https://github.com", "icon": "github", "color": "#F2F2F4" },
+    { "label": "Discord", "url": "https://discord.com/app", "icon": "discord", "color": "#5865F2" },
+    { "label": "STEIGER Dojo", "url": "https://steigerdojo.com", "icon": "stgr", "color": "#E01A24" },
+    { "label": "Twitch", "url": "https://www.twitch.tv", "icon": "twitch", "color": "#9146FF" }
+  ],
+
+  "features": {
+    "adBlocker": true,
+    "telemetry": false,
+    "crashReporting": false,
+    "autoUpdate": true,
+    "extensions": true
+  }
+}

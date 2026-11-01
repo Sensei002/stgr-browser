@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New Tab</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="scene" aria-hidden="true">
+  <div class="scene-glow"></div>
+  <svg class="scene-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <linearGradient id="slash" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#E01A24" stop-opacity=".5"/>
+        <stop offset="1" stop-color="#E01A24" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="torii" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#7d1219"/>
+        <stop offset=".55" stop-color="#4a0c11"/>
+        <stop offset="1" stop-color="#1b0508"/>
+      </linearGradient>
+      <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#E01A24" stop-opacity=".09"/>
+        <stop offset="1" stop-color="#E01A24" stop-opacity="0"/>
+      </linearGradient>
+      <radialGradient id="lantern" cx=".5" cy=".5" r=".5">
+        <stop offset="0" stop-color="#E01A24" stop-opacity=".13"/>
+        <stop offset="1" stop-color="#E01A24" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+
+    <polygon points="-40,0 250,0 60,420 -40,470" fill="url(#slash)" opacity=".55"/>
+    <polygon points="60,0 118,0 18,300 0,300" fill="#E01A24" opacity=".18"/>
+    <polygon points="1640,0 1392,0 1600,360 1640,360" fill="url(#slash)" opacity=".45"/>
+    <polygon points="1566,0 1600,0 1600,230 1512,230" fill="#E01A24" opacity=".15"/>
+
+    <ellipse cx="1300" cy="640" rx="360" ry="300" fill="url(#lantern)"/>
+
+    <!-- torii gate -->
+    <g fill="url(#torii)">
+      <path d="M132 244 C210 226 390 226 468 244 L468 270 C390 252 210 252 132 270 Z"/>
+      <rect x="150" y="282" width="300" height="18" rx="4"/>
+      <rect x="286" y="266" width="28" height="26"/>
+      <rect x="232" y="300" width="24" height="486"/>
+      <rect x="344" y="300" width="24" height="486"/>
+      <rect x="184" y="430" width="232" height="16" rx="3"/>
+      <rect x="222" y="786" width="44" height="16" rx="2" fill="#2a0709"/>
+      <rect x="334" y="786" width="44" height="16" rx="2" fill="#2a0709"/>
+    </g>
+
+    <!-- five-storey pagoda -->
+    <g>
+      <path d="M1086,685 Q1193.0,712 1300,707 Q1407.0,712 1514,685 L1424.12,646 L1175.88,646 Z" fill="#2f2f3c"/>
+      <rect x="1150" y="704" width="300" height="72" fill="#1a1a22"/>
+      <rect x="1164" y="714" width="272" height="4" fill="#2a2a35"/>
+      <path d="M1106,581 Q1203.0,608 1300,603 Q1397.0,608 1494,581 L1412.52,548 L1187.48,548 Z" fill="#2f2f3c"/>
+      <rect x="1170" y="600" width="260" height="46" fill="#1a1a22"/>
+      <rect x="1184" y="610" width="232" height="4" fill="#2a2a35"/>
+      <path d="M1126,499 Q1213.0,526 1300,521 Q1387.0,526 1474,499 L1400.92,471 L1199.08,471 Z" fill="#2f2f3c"/>
+      <rect x="1190" y="518" width="220" height="38" fill="#1a1a22"/>
+      <rect x="1204" y="528" width="192" height="4" fill="#2a2a35"/>
+      <path d="M1144,431 Q1222.0,458 1300,453 Q1378.0,458 1456,431 L1390.48,408 L1209.52,408 Z" fill="#2f2f3c"/>
+      <rect x="1208" y="450" width="184" height="32" fill="#1a1a22"/>
+      <rect x="1222" y="460" width="156" height="4" fill="#2a2a35"/>
+      <path d="M1160,375 Q1230.0,402 1300,397 Q1370.0,402 1440,375 L1381.2,356 L1218.8,356 Z" fill="#2f2f3c"/>
+      <rect x="1224" y="394" width="152" height="26" fill="#1a1a22"/>
+      <rect x="1238" y="404" width="124" height="4" fill="#2a2a35"/>
+      <rect x="1285" y="722" width="30" height="44" fill="#E01A24" opacity=".14"/>
+      <rect x="1285" y="618" width="30" height="18" fill="#E01A24" opacity=".14"/>
+      <rect x="1285" y="536" width="30" height="10" fill="#E01A24" opacity=".14"/>
+      <rect x="1295" y="330" width="10" height="60" fill="#2f2f3c"/>
+      <path d="M1300 304 L1313 358 L1287 358 Z" fill="#2f2f3c"/>
+      <rect x="1096" y="776" width="408" height="12" fill="#26262f"/>
+      <rect x="1126" y="788" width="348" height="46" fill="#12121a"/>
+    </g>
+
+        <path d="M0 800c140-22 268-6 392 8s248 16 384 2 268-22 424-8 260 20 400 8v90H0z" fill="#060609"/>
+  </svg>
+  <div class="scene-grain"></div>
+  <div class="scene-vignette"></div>
+</div>
+
+<div class="app">
+  <!-- ── left rail ─────────────────────────────────────────────────────── -->
+  <aside class="rail">
+    <div class="rail-brand">
+      <img src="assets/logo.png" alt="STGR" class="rail-logo">
+    </div>
+
+    <nav class="rail-nav" aria-label="Browser sections">
+      <a class="rail-item is-active" href="stgr://newtab/">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5.5v-6.5h-5V22H4a1 1 0 0 1-1-1z"/></svg>
+        <span>Home</span>
+      </a>
+      <a class="rail-item" href="chrome://bookmarks">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.4L5 21V3a1 1 0 0 1 1-1z"/></svg>
+        <span>Bookmarks</span>
+      </a>
+      <a class="rail-item" href="chrome://history">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1-8.5 6h2.2A7 7 0 1 0 12 5v3L7.5 4 12 0z" transform="translate(0 1)"/><path d="M11 8h2v5l4 2-1 1.8-5-2.6z"/></svg>
+        <span>History</span>
+      </a>
+      <a class="rail-item" href="chrome://downloads">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v10.2l3.6-3.6 1.4 1.4-6 6-6-6 1.4-1.4L11 13.2z"/><path d="M4 19h16v2H4z"/></svg>
+        <span>Downloads</span>
+      </a>
+      <a class="rail-item" href="chrome://extensions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h4v2.2a2.3 2.3 0 0 0 4.2 1.4l.8-1.3 3.4 2-1.1 1.9a2.3 2.3 0 0 0 1.9 3.4H23v4h-2.2a2.3 2.3 0 0 0-1.4 4.2l1.3.8-2 3.4-1.9-1.1a2.3 2.3 0 0 0-3.4 1.9V23h-4v-2.2a2.3 2.3 0 0 0-4.2-1.4l-.8 1.3-3.4-2 1.1-1.9A2.3 2.3 0 0 0 1 15.9H1v-4h2.2A2.3 2.3 0 0 0 4.6 7.7L3.3 6.9l2-3.4 1.9 1.1A2.3 2.3 0 0 0 10.6 3z"/></svg>
+        <span>Extensions</span>
+      </a>
+      <a class="rail-item" href="chrome://settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5-.1-1.3 1.9-1.5-1.9-3.3-2.3.8a7.6 7.6 0 0 0-2.2-1.3L16.4 3h-3.8l-.4 2.4a7.6 7.6 0 0 0-2.2 1.3L7.7 5.9 5.8 9.2l1.9 1.5a7.8 7.8 0 0 0 0 2.6l-1.9 1.5 1.9 3.3 2.3-.8a7.6 7.6 0 0 0 2.2 1.3l.4 2.4h3.8l.4-2.4a7.6 7.6 0 0 0 2.2-1.3l2.3.8 1.9-3.3-1.9-1.5z"/></svg>
+        <span>Settings</span>
+      </a>
+    </nav>
+
+    <div class="rail-tagline">
+      <p>Host. Compete.<br>Broadcast.</p>
+    </div>
+  </aside>
+
+  <!-- ── main ──────────────────────────────────────────────────────────── -->
+  <main class="stage">
+    <section class="hero">
+      <img src="assets/logo.png" alt="STGR" class="hero-logo">
+      <h1 class="wordmark"><span class="wm-a">STGR</span> <span class="wm-b">Browser</span></h1>
+
+      <form class="search" id="search-form" role="search" autocomplete="off">
+        <span class="search-glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg>
+        </span>
+        <input id="search-input" type="text" placeholder="Search the web..." aria-label="Search the web" spellcheck="false">
+        <button class="search-go" type="submit" aria-label="Search">
+          <svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+
+      <div class="dial" id="dial"></div>
+    </section>
+  </main>
+
+  <!-- ── feature panel ─────────────────────────────────────────────────── -->
+  <aside class="panel">
+    <h2 class="panel-title">Ultra Private.<br>Lightweight. Gamer Ready.</h2>
+
+    <ul class="panel-list">
+      <li>
+        <span class="chip chip-shield" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2 4 5v7c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V5z"/><path class="tick" d="m8.5 12 2.6 2.6L16 9.6"/></svg>
+        </span>
+        <span class="panel-copy"><b>Enhanced Privacy</b><i>No Telemetry</i></span>
+      </li>
+      <li>
+        <span class="chip chip-block" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path class="tick" d="m6.5 6.5 11 11"/></svg>
+        </span>
+        <span class="panel-copy"><b>Built-in Ad Blocker</b><i>STGR Shield</i></span>
+      </li>
+      <li>
+        <span class="chip chip-bolt" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
+        </span>
+        <span class="panel-copy"><b>Fast &amp; Lightweight</b><i>No Bloat</i></span>
+      </li>
+      <li>
+        <span class="chip chip-palette" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0 0 20c1.7 0 2.5-1 2.5-2.2 0-1.4-1.2-1.8-1.2-3 0-1 .8-1.8 2-1.8H17a5 5 0 0 0 5-5C22 5.6 17.5 2 12 2z"/><circle cx="7.5" cy="11" r="1.4"/><circle cx="11" cy="7" r="1.4"/><circle cx="15.5" cy="8" r="1.4"/></svg>
+        </span>
+        <span class="panel-copy"><b>STGR Dark Theme</b><i>Red &middot; Black &middot; Gold</i></span>
+      </li>
+    </ul>
+
+    <div class="panel-powered">
+      <p class="panel-powered-label">Powered by</p>
+      <div class="panel-powered-row">
+        <svg class="chromium-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="11" fill="#0E0E12"/>
+          <circle cx="12" cy="12" r="9.2" fill="#E01A24" opacity=".9"/>
+          <circle cx="12" cy="12" r="4" fill="#0E0E12"/>
+        </svg>
+        <span><b>Chromium</b><i>Chromium Engine</i></span>
+      </div>
+    </div>
+  </aside>
+
+  <footer class="statusbar">
+    <span class="status-left" id="status-version">STGR Browser</span>
+    <span class="status-right">HOST. COMPETE. BROADCAST.<i class="slash"></i><i class="slash"></i></span>
+  </footer>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

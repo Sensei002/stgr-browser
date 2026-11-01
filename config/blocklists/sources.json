@@ -1,0 +1,32 @@
+{
+  "$comment": "Inputs for scripts/build-shield-rules.py. Lists are converted to declarativeNetRequest static rules at build time; nothing is fetched at runtime, so blocking works offline and leaks no URLs. Licences of remote lists are noted - keep them intact when redistributing.",
+  "maxRulesPerRuleset": 25000,
+  "maxTotalRules": 75000,
+  "sources": [
+    {
+      "id": "stgr-core",
+      "kind": "hosts",
+      "path": "config/blocklists/stgr-core.txt",
+      "enabled": true,
+      "license": "STGR original"
+    },
+    {
+      "id": "stevenblack-unified",
+      "kind": "hosts",
+      "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+      "enabled": true,
+      "optional": true,
+      "license": "MIT",
+      "note": "Large general-purpose adware/tracker/malware list. Skipped silently if the build has no network."
+    },
+    {
+      "id": "adguard-dns-filter",
+      "kind": "hosts",
+      "url": "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt",
+      "enabled": false,
+      "optional": true,
+      "license": "GPL-3.0",
+      "note": "Disabled by default: GPL-3.0 obligations are incompatible with shipping closed binaries. Enable only for internal builds."
+    }
+  ]
+}
