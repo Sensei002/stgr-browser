@@ -180,7 +180,11 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.exe dist/latest.json dist/SHA256SUMS.txt --clobber
           else
+            # --target makes gh create the tag at this commit. Without it, a
+            # manual dispatch (where no tag exists yet) produces an "untagged-*"
+            # release that is impossible to associate with a commit later.
             gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
               --title "STGR Browser ${STGR_VERSION}" \
               --notes-file release-notes.md \
               --latest \
