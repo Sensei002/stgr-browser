@@ -63,6 +63,90 @@ def get(data: dict, dotted: str):
     return node
 
 
+def extension_id_from_key(key_b64: str) -> str:
+    """
+    Chromium extension ID = first 128 bits of SHA-256 over the DER public key,
+    hex-encoded, with each hex digit mapped 0-f -> a-p.
+    """
+    import base64
+    import hashlib
+
+    der = base64.b64decode(key_b64)
+    digest = hashlib.sha256(der).hexdigest()[:32]
+    return "".join(chr(ord("a") + int(c, 16)) for c in digest)
+
+
+def check_newtab_wiring(data: dict, problems: list[str]) -> None:
+    """
+    The new-tab URL appears in four places: the NTP manifest key (which derives
+    the ID), brand.json, the seeded preferences and the enterprise policy. If
+    they drift, the browser silently falls back to Chromium's built-in new tab
+    page - which is exactly the bug this check exists to prevent.
+    """
+    manifest_path = ROOT / "ntp" / "manifest.json"
+    prefs_path = ROOT / "config" / "preferences" / "stgr-defaults.json"
+    policy_path = ROOT / "config" / "policies" / "base.json"
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        problems.append(f"cannot read ntp/manifest.json: {exc}")
+        return
+
+    key = manifest.get("key")
+    if not key:
+        problems.append("ntp/manifest.json has no 'key' - the extension ID would not be stable")
+        return
+
+    try:
+        actual_id = extension_id_from_key(key)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"ntp/manifest.json 'key' is not valid base64: {exc}")
+        return
+
+    declared_id = data.get("extensions", {}).get("ntpId")
+    if declared_id != actual_id:
+        problems.append(
+            f"extensions.ntpId is {declared_id!r} but the manifest key derives {actual_id!r}"
+        )
+
+    expected_url = f"chrome-extension://{actual_id}/index.html"
+    for label, value in (
+        ("extensions.ntpUrl", data.get("extensions", {}).get("ntpUrl")),
+        ("urls.newTab", data.get("urls", {}).get("newTab")),
+    ):
+        if value != expected_url:
+            problems.append(f"{label} should be {expected_url!r}, got {value!r}")
+
+    try:
+        prefs = json.loads(prefs_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        problems.append(f"cannot read preferences: {exc}")
+    else:
+        if prefs.get("homepage") != expected_url:
+            problems.append(f"preferences homepage should be {expected_url!r}, got {prefs.get('homepage')!r}")
+        session = prefs.get("session", {})
+        # 5 = "open the New Tab Page". Chromium filters chrome-extension:// URLs
+        # out of startup_urls, so an explicit URL list would silently do nothing.
+        if session.get("restore_on_startup") != 5:
+            problems.append("preferences session.restore_on_startup should be 5 (open the new tab page)")
+        if session.get("startup_urls"):
+            problems.append("preferences session.startup_urls must stay empty - Chromium filters chrome-extension:// from it")
+        if "newtab_page_location_override" in prefs:
+            problems.append(
+                "newtab_page_location_override must not be set - pointing it at stgr:// is what "
+                "made the first tab fall back to the built-in new tab page"
+            )
+
+    try:
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        problems.append(f"cannot read policies: {exc}")
+    else:
+        if policy.get("HomepageLocation") != expected_url:
+            problems.append("policy HomepageLocation does not match the new-tab URL")
+
+
 def main() -> int:
     if not BRAND.exists():
         print(f"error: {BRAND} missing", file=sys.stderr)
@@ -120,6 +204,13 @@ def main() -> int:
 
     if problems:
         print("brand.json validation failed:", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+
+    check_newtab_wiring(data, problems)
+    if problems:
+        print("new-tab wiring is inconsistent:", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1

@@ -5,26 +5,98 @@
   "description": "STGR Browser default theme - red, black and gold.",
   "theme": {
     "colors": {
-      "frame": [8, 8, 10],
-      "frame_inactive": [12, 12, 16],
-      "frame_incognito": [8, 8, 10],
-      "frame_incognito_inactive": [12, 12, 16],
-      "toolbar": [16, 16, 20],
-      "tab_text": [242, 242, 244],
-      "tab_background_text": [154, 154, 166],
-      "tab_background_text_inactive": [120, 120, 132],
-      "tab_background_text_incognito": [154, 154, 166],
-      "bookmark_text": [201, 201, 210],
-      "ntp_background": [8, 8, 10],
-      "ntp_text": [242, 242, 244],
-      "ntp_link": [224, 26, 36],
-      "button_background": [16, 16, 20],
-      "toolbar_button_icon": [201, 201, 210],
-      "omnibox_background": [22, 22, 28],
-      "omnibox_text": [242, 242, 244]
+      "frame": [
+        18,
+        7,
+        9
+      ],
+      "frame_inactive": [
+        12,
+        5,
+        6
+      ],
+      "frame_incognito": [
+        18,
+        7,
+        9
+      ],
+      "frame_incognito_inactive": [
+        12,
+        5,
+        6
+      ],
+      "toolbar": [
+        32,
+        9,
+        13
+      ],
+      "tab_text": [
+        246,
+        241,
+        241
+      ],
+      "tab_background_text": [
+        168,
+        146,
+        150
+      ],
+      "tab_background_text_inactive": [
+        126,
+        108,
+        112
+      ],
+      "tab_background_text_incognito": [
+        154,
+        154,
+        166
+      ],
+      "bookmark_text": [
+        224,
+        205,
+        208
+      ],
+      "ntp_background": [
+        8,
+        8,
+        10
+      ],
+      "ntp_text": [
+        242,
+        242,
+        244
+      ],
+      "ntp_link": [
+        224,
+        26,
+        36
+      ],
+      "button_background": [
+        32,
+        9,
+        13
+      ],
+      "toolbar_button_icon": [
+        224,
+        205,
+        208
+      ],
+      "omnibox_background": [
+        24,
+        10,
+        13
+      ],
+      "omnibox_text": [
+        242,
+        242,
+        244
+      ]
     },
     "tints": {
-      "buttons": [-1, -1, -1]
+      "buttons": [
+        -1,
+        -1,
+        -1
+      ]
     },
     "properties": {
       "ntp_logo_alternate": 1

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "STGR New Tab",
   "short_name": "STGR",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The STGR Browser new tab page: speed dial, private search, zero network calls.",
   "chrome_url_overrides": {
     "newtab": "index.html"
@@ -17,5 +17,6 @@
     "32": "assets/icon-32.png",
     "48": "assets/icon-48.png",
     "128": "assets/icon-128.png"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtgyMEVEA7hmODfSOSzVW4iBOBQ2NrWgLUsiGyCqyFV+lqBMGcYjaM9k0XB2OVXjDVImmFubrl7JSP9ZKYKN+nm+QYzX3lxmU4dpRyAGVXW7daHbefBsSU7r0m8WoTuzaT+PTDRQEBgzfb63pjn2dyqGgM8bptcU6o94ay6zWqDL3fal8sxvjTfolbb+JMfxOy4gFOzotGnnzHWTRbHrVwgCYw7USv71OjGD67zFmCs3BITIvWzPbuIG0PsR4JztQrEOecInhsFs+UlUT7rV9nurImGDOrVGkzI0duoRyhulVWcLHnpOVpg9r90r+r9ISM8tem9MU2iIv94jEEr3RowIDAQAB"
 }

@@ -4,7 +4,7 @@ Machine-readable-ish snapshot of reality. Update this when you stop working. If 
 disagrees with the code, this file is stale — fix it.
 
 **Last updated:** 2026-11-01
-**Version:** 0.1.0 (pre-release, never tagged)
+**Version:** 0.1.1
 **Target:** Windows 10/11 x64 only
 
 ---
@@ -91,6 +91,39 @@ Two things this does *not* prove:
 ---
 
 ## Session log
+
+### 2026-11-01 (d) — first real install, four user-reported bugs
+The installer was run on real Windows. It launched, and three defects were immediately
+visible. This is the most valuable feedback the project has had; treat "it built" as
+unproven until someone has launched it.
+
+1. **First tab showed Chromium's built-in NTP, not STGR.** Root cause: two preferences
+   pointed the new tab at `stgr://newtab/`, a scheme Chromium has no internal handler for.
+   New tabs worked (they go through `chrome_url_overrides`), the startup tab did not.
+   Fix: `homepage` is now the real `chrome-extension://…/index.html`, and
+   `newtab_page_location_override` is gone. `scripts/check-brand.py` now fails the build if
+   either regresses.
+2. **No app icon.** `csc` emits an iconless exe, and only the engine was being stamped, so
+   the desktop shortcut showed the generic "unknown file" icon. Fix: `stamp_binary()` now
+   runs on `STGRBrowser.exe` too, and the build **fails** if it cannot stamp it.
+3. **Chrome looked unthemed.** The old theme was `#08080A`/`#101014` — indistinguishable
+   from plain dark mode. Toolbar is now `#20090D` and the frame is warm-black, so the tint
+   is visible. `BrowserThemeColor` / `BrowserColorScheme` policies were added as a fallback
+   in case the unpacked theme is not honoured.
+4. **AI surfaces.** Added a documented `--disable-features` block for Compose, AI history
+   search, on-device model downloads, AI wallpaper, AI autofill and the NTP footer.
+   Chromium ignores unknown feature names, so the list is safe to over-specify.
+
+**Also done:** the NTP extension now carries a `key`, giving it the stable ID
+`hpdfacponigkmgcehdnobgkojchgoijg`. Without it the ID is derived from the unpacked path, so
+`chrome-extension://` URLs and profile storage would move between installs.
+
+**Version:** bumped to 0.1.1. `v0.1.0` was tagged, the tag run was cancelled before it
+published, and the tag was deleted — it shipped the three defects above.
+
+**Still unproven:** whether the theme extension is honoured at all when loaded unpacked via
+`--load-extension`. If the chrome is still neutral grey after 0.1.1, the policy fallback is
+the only remaining lever without a source build, and a custom toolbar becomes Stage 2 work.
 
 ### 2026-11-01 (c) — installer builds in CI
 **Done:** `build-windows` #3 green. `STGR-Browser-Setup-0.1.0-x64.exe`, 253,749,352 bytes,

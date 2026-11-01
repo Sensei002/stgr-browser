@@ -146,6 +146,20 @@ shortcuts, taskkill calls) will silently target nothing. The launcher falls back
 browser. Testing a pref change requires deleting `%LOCALAPPDATA%\STGR\Browser` first. This
 wastes more debugging time than any other fact in this repo.
 
+**Never point a pref at `stgr://`.** The installer registers that scheme with the OS, but
+Chromium has no internal handler for it. A `homepage` or `newtab_page_location_override`
+pointing at `stgr://newtab/` makes the startup tab silently fall back to Chromium's built-in
+new tab page, while new tabs still work — a confusing half-broken state. Use the real
+`chrome-extension://<id>/index.html`, and let `scripts/check-brand.py` police it.
+
+**A compiled launcher has no icon.** `csc` produces an iconless exe. If you add another
+binary to the payload, stamp it with `stamp_binary()` or the shortcut will show the generic
+"unknown file" icon.
+
+**Theme colours must be visible, not merely correct.** A `#08080A` frame is
+indistinguishable from plain dark mode, and users read that as "the theme didn't load". Push
+the toolbar to a warm red-black so the tint is obvious.
+
 **Duplicate `--disable-features` switches: last one wins, others vanish.** Chromium does not
 merge them. `flags.conf` keeps one line per feature list and `build.py` merges `@include`
 chains — do not add a second `--disable-features` line in a profile.

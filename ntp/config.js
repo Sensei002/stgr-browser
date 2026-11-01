@@ -3,7 +3,7 @@
 window.STGR_CONFIG = {
   "name": "STGR Browser",
   "shortName": "STGR",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "tagline": "Host. Compete. Broadcast.",
   "homepage": "https://github.com/stgr-browser/stgr-browser",
   "colors": {

@@ -305,13 +305,14 @@ def ensure_rcedit() -> Path | None:
         return None
 
 
-def stamp_engine(exe: Path, brand: dict, version: str) -> None:
+def stamp_binary(exe: Path, brand: dict, version: str, internal: str, original: str) -> bool:
+    """Apply the STGR icon and version resources to a PE file."""
     rcedit = ensure_rcedit()
     ico = ROOT / brand["assets"]["iconIco"]
     if not rcedit or not ico.exists():
-        log("warning: skipping engine resource stamping")
-        return
-    ok = try_run(
+        log(f"warning: cannot stamp {exe.name} (rcedit or icon missing)")
+        return False
+    return try_run(
         [
             str(rcedit), str(exe),
             "--set-icon", str(ico),
@@ -321,10 +322,14 @@ def stamp_engine(exe: Path, brand: dict, version: str) -> None:
             "--set-version-string", "FileDescription", brand["product"]["name"],
             "--set-version-string", "CompanyName", brand["product"]["vendor"],
             "--set-version-string", "LegalCopyright", brand["product"]["copyright"],
-            "--set-version-string", "InternalName", "stgr",
-            "--set-version-string", "OriginalFilename", "stgr.exe",
+            "--set-version-string", "InternalName", internal,
+            "--set-version-string", "OriginalFilename", original,
         ]
     )
+
+
+def stamp_engine(exe: Path, brand: dict, version: str) -> None:
+    ok = stamp_binary(exe, brand, version, "stgr", "stgr.exe")
     log("engine resources stamped" if ok else "warning: engine resource stamping failed")
 
 
@@ -378,6 +383,7 @@ internal static class StgrLauncher
 {{
     private const string Flags = @"{literal}";
     private const string LowMemExtra = @"{delta}";
+    private const string NewTabUrl = @"{brand['urls']['newTab']}";
 
     [STAThread]
     private static int Main(string[] args)
@@ -393,7 +399,14 @@ internal static class StgrLauncher
         {{
             if (arg == "--stgr-lowmem") {{ lowmem = true; continue; }}
             if (arg == "--stgr-quit") {{ quit = true; continue; }}
-            passthrough.Append(" \\"").Append(arg.Replace("\\"", "\\\\\\"")).Append("\\"");
+
+            // stgr:// is registered by the installer for the OS, but Chromium
+            // itself has no handler for it. Translate the alias before it
+            // reaches the engine or the tab lands on an error page.
+            string mapped = arg.StartsWith("stgr://newtab", StringComparison.OrdinalIgnoreCase)
+                ? NewTabUrl
+                : arg;
+            passthrough.Append(" \\"").Append(mapped.Replace("\\"", "\\\\\\"")).Append("\\"");
         }}
 
         if (quit)
@@ -442,6 +455,13 @@ internal static class StgrLauncher
     if not out.exists():
         die(f"csc reported success but produced no {out.name}")
     cs.unlink(missing_ok=True)
+
+    # csc emits an iconless exe. Without this the desktop shortcut and the
+    # taskbar show the generic "unknown file" icon, which is the first thing a
+    # user sees after installing.
+    if not stamp_binary(out, brand, product_version(), "stgr-launcher", out.name):
+        die("could not stamp the launcher icon - the shortcut would ship iconless")
+
     log(f"launcher compiled: {out.name} ({out.stat().st_size // 1024} KiB)")
     return out
 

@@ -1,5 +1,5 @@
 {
-  "$comment": "Default profile preferences, written into the shipped profile template. Keys are real Chromium pref paths - validate against chrome://prefs-internals after any change. Unknown keys are silently ignored by Chromium, so a typo fails quietly: always diff behaviour after editing.",
+  "$comment": "Default profile preferences, written into initial_preferences and applied on first run. Keys are real Chromium pref paths - validate against chrome://prefs-internals after any change. Unknown keys are silently ignored by Chromium, so a typo fails quietly: always diff behaviour after editing. The new-tab URL is the extension's own page with a pinned extension ID; do NOT use stgr:// here, Chromium has no internal handler for it and falls back to the built-in NTP.",
 
   "browser": {
     "show_home_button": true,
@@ -12,13 +12,12 @@
     }
   },
 
-  "homepage": "stgr://newtab/",
-  "homepage_is_newtabpage": true,
+  "homepage": "chrome-extension://hpdfacponigkmgcehdnobgkojchgoijg/index.html",
+  "homepage_is_newtabpage": false,
   "session": {
     "restore_on_startup": 5,
     "startup_urls": []
   },
-  "newtab_page_location_override": "stgr://newtab/",
 
   "bookmark_bar": {
     "show_on_all_tabs": false,
