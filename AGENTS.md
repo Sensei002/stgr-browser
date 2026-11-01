@@ -152,6 +152,18 @@ pointing at `stgr://newtab/` makes the startup tab silently fall back to Chromiu
 new tab page, while new tabs still work — a confusing half-broken state. Use the real
 `chrome-extension://<id>/index.html`, and let `scripts/check-brand.py` police it.
 
+**`chrome_url_overrides` does not apply to the startup tab.** Chromium builds the first tab
+from the startup preference without consulting the extension registry, so an NTP extension
+that works perfectly on every *new* tab still leaves the first tab on Chromium's built-in
+page. The only reliable fix in a distribution build is to hand the engine an explicit URL on
+the command line, which the launcher does. Do not "simplify" that away.
+
+**`--disable-features` accumulates, but only because `build.py` makes it.** Chromium keeps
+only the last occurrence of a duplicated switch. `parse_flags()` therefore unions every
+`--disable-features` line across `@include` layers before emitting one. If you add a second
+feature line to a profile and the earlier list stops applying, that merge has regressed —
+`python scripts/build.py --print-flags lowmem` shows the resolved list.
+
 **A compiled launcher has no icon.** `csc` produces an iconless exe. If you add another
 binary to the payload, stamp it with `stamp_binary()` or the shortcut will show the generic
 "unknown file" icon.

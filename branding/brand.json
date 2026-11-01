@@ -22,7 +22,7 @@
   },
   "versions": {
     "$comment": "STGR_VERSION is derived in CI from the git tag. Chromium version comes from the pinned base in config/base.json.",
-    "initial": "0.1.1",
+    "initial": "0.1.2",
     "channel": "stable"
   },
   "engines": {

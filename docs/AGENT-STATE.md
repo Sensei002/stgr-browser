@@ -92,6 +92,29 @@ Two things this does *not* prove:
 
 ## Session log
 
+### 2026-11-01 (e) — startup tab, take two
+0.1.1 fixed the icon and the theme, but the first tab *still* showed Chromium's built-in new
+tab page. The 0.1.1 screenshot also proved the theme extension works: the toolbar came up
+`#20090D` maroon, which is ours, not Chromium's default dark.
+
+So the remaining bug was narrower than assumed. `chrome_url_overrides` is **not consulted
+when Chromium builds the startup tab** — it creates that tab from the startup preference
+before the extension registry is ready. Every *new* tab got the override; the first one never
+could.
+
+Fix: the launcher now appends the new-tab URL to the engine command line when the user
+supplied no URL of their own. A URL on the command line replaces the startup pages entirely
+and is navigated after extensions register, so exactly one tab opens and it is always ours.
+`restore_on_startup` stays at 5 as a fallback for anyone launching `stgr.exe` directly.
+
+**Second bug, found by the new `--dump-launcher`:** `parse_flags()` stored switches in a
+dict, so a profile's own `--disable-features` line replaced the shared one instead of
+merging with it. `lowmem` was silently re-enabling every AI feature that `balanced` disabled.
+Feature switches now accumulate across `@include` layers. This is the argument for keeping
+that dump command: it made a silent regression visible without a compiler.
+
+**Version:** 0.1.2.
+
 ### 2026-11-01 (d) — first real install, four user-reported bugs
 The installer was run on real Windows. It launched, and three defects were immediately
 visible. This is the most valuable feedback the project has had; treat "it built" as
