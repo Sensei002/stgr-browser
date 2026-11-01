@@ -24,9 +24,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
 
       - name: Install dependencies
-        run: python -m pip install --quiet pillow
+        run: python -m pip install --quiet -r requirements-build.txt
 
       - name: Python syntax check
         run: python -m compileall -q scripts branding
@@ -123,9 +125,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
 
       - name: Install dependencies
-        run: python -m pip install --quiet pillow
+        run: python -m pip install --quiet -r requirements-build.txt
 
       - name: Syntax-check the build orchestrator
         shell: bash
@@ -134,16 +138,35 @@ jobs:
       - name: Compile the installer script only
         shell: bash
         run: |
-          set -euo pipefail
-          # Relative paths on purpose: makensis.exe is a native Windows binary and
-          # cannot resolve Git Bash POSIX paths such as /d/a/repo/repo/...
+          set -uo pipefail
+
+          # makensis.exe is a native Windows binary. Two traps live here:
+          #   1. Git Bash $PWD is a POSIX path (/d/a/...) it cannot resolve.
+          #   2. makensis chdir's to the script's directory, so relative paths
+          #      in the script resolve against build/stub/, not the repo root.
+          # cygpath gives a real Windows path and sidesteps both.
           mkdir -p build/stub/src build/stub/out
           cp overrides/windows/installer.nsi build/stub/
           echo "stub payload" > build/stub/src/payload.txt
-          "/c/Program Files (x86)/NSIS/makensis.exe" /V2 \
-            /DVERSION=0.0.0 /DVI_VERSION=0.0.0.0 \
-            /DSRCDIR=build/stub/src \
-            /DOUTFILE=build/stub/out/stub.exe \
-            build/stub/installer.nsi
-          test -s build/stub/out/stub.exe
-          echo "nsis ok"
+
+          SRC_WIN="$(cygpath -w "$PWD/build/stub/src")"
+          OUT_WIN="$(cygpath -w "$PWD/build/stub/out/stub.exe")"
+          echo "SRCDIR=$SRC_WIN"
+          echo "OUTFILE=$OUT_WIN"
+
+          LOG="$RUNNER_TEMP/makensis.log"
+          if "/c/Program Files (x86)/NSIS/makensis.exe" /V3 \
+               "/DVERSION=0.0.0" "/DVI_VERSION=0.0.0.0" \
+               "/DSRCDIR=$SRC_WIN" "/DOUTFILE=$OUT_WIN" \
+               build/stub/installer.nsi > "$LOG" 2>&1; then
+            test -s build/stub/out/stub.exe
+            echo "nsis ok"
+          else
+            cat "$LOG"
+            # Surface the real error as annotations: the API exposes those
+            # without admin rights, which is how CI failures get triaged here.
+            head -25 "$LOG" | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::${line//%/%%}"
+            done
+            exit 1
+          fi

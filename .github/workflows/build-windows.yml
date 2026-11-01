@@ -46,10 +46,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          # setup-python's pip cache needs a dependency file to hash; without
+          # cache-dependency-path it fails the step outright.
           cache: pip
+          cache-dependency-path: requirements-build.txt
 
       - name: Install dependencies
-        run: python -m pip install --quiet --upgrade pillow
+        run: python -m pip install --quiet -r requirements-build.txt
 
       - name: Resolve version
         shell: bash
@@ -86,9 +89,21 @@ jobs:
       - name: Build installer
         shell: bash
         run: |
-          set -euo pipefail
-          python scripts/build.py --clean
-          ls -la dist
+          set -uo pipefail
+          LOG="$RUNNER_TEMP/build.log"
+          if python scripts/build.py --clean > "$LOG" 2>&1; then
+            tail -30 "$LOG"
+            ls -la dist
+          else
+            echo "build failed - last 60 lines:"
+            tail -60 "$LOG"
+            # Annotations are readable through the public API without admin
+            # rights, which is how CI failures get triaged from an agent.
+            tail -40 "$LOG" | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::${line//%/%%}"
+            done
+            exit 1
+          fi
 
       - name: Checksums
         shell: bash

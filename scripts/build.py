@@ -505,8 +505,9 @@ def vi_version(version: str) -> str:
 def package(brand: dict, version: str) -> Path | None:
     makensis = find_makensis()
     if not makensis:
-        log("warning: makensis not found - skipping installer")
-        return None
+        # Failing loudly beats producing an empty dist/ that only breaks three
+        # steps later with "no such file: *.exe".
+        die("makensis not found - install NSIS or add it to PATH before packaging")
 
     DIST.mkdir(parents=True, exist_ok=True)
     outfile = DIST / f"STGR-Browser-Setup-{version}-x64.exe"

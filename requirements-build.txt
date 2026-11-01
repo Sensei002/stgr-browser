@@ -1,0 +1,9 @@
+# Build-time Python dependencies.
+#
+# Kept separate from any runtime concerns because there are none: nothing in
+# the shipped browser is Python. This file exists so that
+#   - `actions/setup-python` with `cache: pip` has something to hash,
+#   - the toolchain version is pinned rather than "whatever pip resolved today".
+#
+# Pillow is used for icon rasterisation and installer artwork only.
+pillow>=10.0,<12
