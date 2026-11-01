@@ -163,7 +163,11 @@ jobs:
           echo "OUTFILE=$OUT_WIN"
 
           LOG="$RUNNER_TEMP/makensis.log"
-          if "$MAKENSIS" /V3 \
+          # MSYS_NO_PATHCONV stops Git Bash rewriting "/V3" into
+          # "C:/Program Files/Git/V3" before makensis ever sees it. Without
+          # this, makensis treats the mangled switch as the script path and
+          # fails with `Can't open script "C:/Program Files/Git/V3"`.
+          if MSYS_NO_PATHCONV=1 "$MAKENSIS" /V3 \
                "/DVERSION=0.0.0" "/DVI_VERSION=0.0.0.0" \
                "/DSRCDIR=$SRC_WIN" "/DOUTFILE=$OUT_WIN" \
                build/stub/installer.nsi > "$LOG" 2>&1; then

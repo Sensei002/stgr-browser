@@ -20,17 +20,19 @@ disagrees with the code, this file is stale — fix it.
 | Shield extension + DNR rules | Written, 98 rules compiled offline | Rule shape asserted in CI |
 | Flags / profiles | Done | `--print-flags` output reviewed for balanced + lowmem |
 | Preferences / policies | Written | Not yet applied to a live profile |
-| Build orchestrator | Written | `py_compile` + flag parsing only |
-| NSIS installer | Written | **Never compiled successfully yet** — see run 1 below |
-| CI `validate` job | **Green** | Run 41279651720, all 13 steps passed |
-| Release workflow | Written | Never executed (needs a tag or a main push) |
+| Build orchestrator | Done | Full run green in CI, run 41280347362 |
+| NSIS installer | **Works** | 253,749,352 bytes, sha256 `94a10edb…` |
+| CI `validate` job | Green | Run 41279651720 |
+| `ci / installer compiles` | Fixed, awaiting verification | MSYS path-conversion fix |
+| Release workflow | Written | Never executed — needs a tag |
 | Stage 2 patch series | Scaffolded only | No patches written yet |
 
 ### The honest summary
 
-`ci / validate` is green on `main`. Everything downstream of it — the installer build, the
-release — has still never completed. Expect the first `build-windows` run to fail on
-something small; that is what it is there to find.
+The Windows installer **builds end to end in CI**. Run `build-windows` #3 produced
+`STGR-Browser-Setup-0.1.0-x64.exe` (242 MiB) from a cold cache in about 9 minutes, with
+rcedit branding, the compiled launcher, and all three extensions staged. Nothing has been
+installed on a real machine yet — that is the next gate, not the next build.
 
 ---
 
@@ -81,6 +83,22 @@ something small; that is what it is there to find.
 ---
 
 ## Session log
+
+### 2026-11-01 (c) — installer builds in CI
+**Done:** `build-windows` #3 green. `STGR-Browser-Setup-0.1.0-x64.exe`, 253,749,352 bytes,
+sha256 `94a10edbc9d24b237f60b001f28a24e49e989f8599b857a1b4b5fd39d8f60ea0`. Engine
+resources stamped, launcher 11 KiB, 294 entries staged, 30 balanced switches + 6 low-RAM.
+Three separate CI failures were fixed to get here:
+1. `setup-python` with `cache: pip` and no dependency file kills the job at step 3. Added
+   `requirements-build.txt` and `cache-dependency-path`.
+2. NSIS is not at `C:\Program Files (x86)\NSIS` until `choco install nsis` runs.
+3. Git Bash rewrote `/V3` into `C:/Program Files/Git/V3`, so `makensis` tried to compile a
+   file that does not exist. Needs `MSYS_NO_PATHCONV=1`.
+**Left:** the installer has never been run on Windows. Install it, launch it, and check the
+four things in "What to do first". Also: 242 MiB is large — a snapshot build carries a lot
+that an official `is_official_build` build would not. Do not optimise size before Stage 2.
+**Landmines:** the MSYS path-conversion one is now in AGENTS.md. It will bite again in any
+`shell: bash` step that calls a Windows binary with `/` switches.
 
 ### 2026-11-01 (b) — first CI run, three fixes
 **Done:** pushed to `github.com/Sensei002/stgr-browser`. `ci / validate` green (13/13).

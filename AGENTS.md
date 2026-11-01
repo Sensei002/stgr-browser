@@ -158,6 +158,19 @@ the product. Renaming that key breaks every policy silently.
 the left sidebar as real UI. The sidebar in the NTP is a link rail that disappears once you
 navigate. Making it real chrome is Stage 2 work (`patches/`), not a CSS change.
 
+**Git Bash rewrites Windows-style switches.** In any `shell: bash` step that calls a native
+Windows binary, an argument like `/V3` is silently converted to `C:/Program Files/Git/V3`
+before the program sees it. `makensis` then treats the mangled switch as the script path and
+fails with `Can't open script "C:/Program Files/Git/V3"`. Prefix the command with
+`MSYS_NO_PATHCONV=1`, or call the tool from Python (where `subprocess` does no rewriting).
+This cost two CI cycles; do not rediscover it.
+
+**Only 10 check-run annotations survive, and CI logs need admin rights to download.** When
+adding a failure handler, annotate the lines that *explain* the failure, not a fixed tail
+window — a `tail -40 | echo ::error::` handler gets truncated to the first ten lines and hides
+the error entirely. `build.py` annotates its own `die()` and uncaught exceptions for this
+reason.
+
 **Solid LZMA makes the installer slow, not broken.** A ~250 MB payload compresses for
 8–12 minutes on a 4-core runner. If the job looks hung, it is probably compressing. Check
 `makensis /V3` output before assuming a hang.
