@@ -135,6 +135,10 @@ jobs:
         shell: bash
         run: python -m py_compile scripts/build.py
 
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
       - name: Compile the installer script only
         shell: bash
         run: |
@@ -145,6 +149,10 @@ jobs:
           #   2. makensis chdir's to the script's directory, so relative paths
           #      in the script resolve against build/stub/, not the repo root.
           # cygpath gives a real Windows path and sidesteps both.
+          MAKENSIS="$(command -v makensis || echo '/c/Program Files (x86)/NSIS/makensis.exe')"
+          echo "makensis: $MAKENSIS"
+          test -x "$MAKENSIS"
+
           mkdir -p build/stub/src build/stub/out
           cp overrides/windows/installer.nsi build/stub/
           echo "stub payload" > build/stub/src/payload.txt
@@ -155,7 +163,7 @@ jobs:
           echo "OUTFILE=$OUT_WIN"
 
           LOG="$RUNNER_TEMP/makensis.log"
-          if "/c/Program Files (x86)/NSIS/makensis.exe" /V3 \
+          if "$MAKENSIS" /V3 \
                "/DVERSION=0.0.0" "/DVI_VERSION=0.0.0.0" \
                "/DSRCDIR=$SRC_WIN" "/DOUTFILE=$OUT_WIN" \
                build/stub/installer.nsi > "$LOG" 2>&1; then
@@ -163,9 +171,11 @@ jobs:
             echo "nsis ok"
           else
             cat "$LOG"
-            # Surface the real error as annotations: the API exposes those
-            # without admin rights, which is how CI failures get triaged here.
-            head -25 "$LOG" | while IFS= read -r line; do
+            # Only 10 annotations survive per check run, so send the lines that
+            # actually explain the failure - not an arbitrary window.
+            { grep -iE 'error|warning|!include|invalid|failed|unknown' "$LOG" | head -8
+              echo "--- last lines ---"
+              tail -3 "$LOG"; } | while IFS= read -r line; do
               [ -n "$line" ] && echo "::error::${line//%/%%}"
             done
             exit 1

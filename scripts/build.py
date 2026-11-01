@@ -27,6 +27,7 @@ flags can never drift between entry points.
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -59,8 +60,23 @@ def log(msg: str) -> None:
     print(f"[build] {msg}", flush=True)
 
 
+def annotate(msg: str, limit: int = 12) -> None:
+    """
+    Emit GitHub check-run annotations for a failure.
+
+    CI logs need admin rights to download; annotations do not. Without this, a
+    build failure is invisible to anyone (or anything) triaging from the API.
+    """
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    lines = [line for line in msg.splitlines() if line.strip()][-limit:]
+    for line in lines:
+        print("::error::" + line.replace("%", "%25"), flush=True)
+
+
 def die(msg: str) -> "None":
     print(f"[build] ERROR: {msg}", file=sys.stderr, flush=True)
+    annotate(f"build failed: {msg}")
     raise SystemExit(1)
 
 
@@ -312,6 +328,34 @@ def stamp_engine(exe: Path, brand: dict, version: str) -> None:
     log("engine resources stamped" if ok else "warning: engine resource stamping failed")
 
 
+def find_csc() -> str | None:
+    """
+    Locate a C# compiler. Windows runner images have moved this around, so
+    check every plausible location instead of assuming the Framework one.
+    """
+    found = shutil.which("csc") or shutil.which("csc.exe")
+    if found:
+        return found
+
+    windir = Path(os.environ.get("WINDIR", r"C:\Windows"))
+    for candidate in (
+        windir / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe",
+        windir / "Microsoft.NET" / "Framework" / "v4.0.30319" / "csc.exe",
+    ):
+        if candidate.exists():
+            return str(candidate)
+
+    # Visual Studio ships Roslyn, which is a perfectly good csc.
+    for pattern in (
+        r"C:\Program Files\Microsoft Visual Studio\2022\*\MSBuild\Current\Bin\Roslyn\csc.exe",
+        r"C:\Program Files (x86)\Microsoft Visual Studio\2022\*\MSBuild\Current\Bin\Roslyn\csc.exe",
+    ):
+        for hit in sorted(glob.glob(pattern)):
+            if Path(hit).exists():
+                return hit
+    return None
+
+
 def compile_launcher(app: Path, flags: list[str], lowmem_delta: list[str], brand: dict) -> Path:
     """
     Small WinExe that owns the flag set for every entry point.
@@ -390,19 +434,13 @@ internal static class StgrLauncher
     )
 
     out = app / "STGRBrowser.exe"
-    csc = shutil.which("csc") or shutil.which("csc.exe")
+    csc = find_csc()
     if not csc:
-        for candidate in (
-            Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe",
-            Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework" / "v4.0.30319" / "csc.exe",
-        ):
-            if candidate.exists():
-                csc = str(candidate)
-                break
-
-    if not csc:
-        die("csc.exe not found - cannot build the launcher (needs .NET Framework 4.x)")
+        die("csc.exe not found - cannot build the launcher (needs .NET Framework 4.x or Roslyn)")
+    log(f"compiling launcher with {csc}")
     run([csc, "/nologo", "/target:winexe", f"/out:{out}", str(cs)])
+    if not out.exists():
+        die(f"csc reported success but produced no {out.name}")
     cs.unlink(missing_ok=True)
     log(f"launcher compiled: {out.name} ({out.stat().st_size // 1024} KiB)")
     return out
@@ -435,6 +473,7 @@ def assemble(brand: dict, version: str, revision: str, skip_fetch: bool) -> Path
 
     stage_extensions(STAGE / "extensions")
 
+    log("resolving flag profiles")
     balanced = parse_flags("balanced")
     lowmem = parse_flags("lowmem")
     lowmem_delta = [f for f in lowmem if f not in balanced]
@@ -465,12 +504,13 @@ def assemble(brand: dict, version: str, revision: str, skip_fetch: bool) -> Path
 
 
 def find_makensis() -> str | None:
-    found = shutil.which("makensis")
+    found = shutil.which("makensis") or shutil.which("makensis.exe")
     if found:
         return found
     for candidate in (
         Path(r"C:\Program Files (x86)\NSIS\makensis.exe"),
         Path(r"C:\Program Files\NSIS\makensis.exe"),
+        Path(r"C:\ProgramData\chocolatey\bin\makensis.exe"),
     ):
         if candidate.exists():
             return str(candidate)
@@ -606,4 +646,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException:  # noqa: BLE001 - top-level crash reporter
+        import traceback
+
+        report = traceback.format_exc()
+        print(report, file=sys.stderr, flush=True)
+        annotate(report)
+        raise SystemExit(1)

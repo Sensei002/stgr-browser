@@ -77,6 +77,10 @@ jobs:
           restore-keys: |
             chromium-win64-
 
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
       - name: Regenerate brand assets
         shell: bash
         run: |
@@ -92,16 +96,21 @@ jobs:
           set -uo pipefail
           LOG="$RUNNER_TEMP/build.log"
           if python scripts/build.py --clean > "$LOG" 2>&1; then
-            tail -30 "$LOG"
+            tail -25 "$LOG"
             ls -la dist
           else
-            echo "build failed - last 60 lines:"
-            tail -60 "$LOG"
-            # Annotations are readable through the public API without admin
-            # rights, which is how CI failures get triaged from an agent.
-            tail -40 "$LOG" | while IFS= read -r line; do
-              [ -n "$line" ] && echo "::error::${line//%/%%}"
-            done
+            echo "build failed - last 40 lines:"
+            tail -40 "$LOG"
+            # build.py emits its own ::error:: annotations for die() and for
+            # uncaught exceptions, so those are already in the check run.
+            # Only add the tail here when it did not manage to annotate.
+            if ! grep -q '^::error::' "$LOG"; then
+              { grep -iE 'error|traceback|failed|cannot|no such' "$LOG" | head -8
+                echo "--- last lines ---"
+                tail -3 "$LOG"; } | while IFS= read -r line; do
+                [ -n "$line" ] && echo "::error::${line//%/%%}"
+              done
+            fi
             exit 1
           fi
 
