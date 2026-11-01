@@ -69,29 +69,56 @@ def fetch(url: str, timeout: int = 25) -> str | None:
         return None
 
 
-def collect(offline: bool) -> set[str]:
+def collect(offline: bool) -> tuple[set[str], set[str]]:
+    """
+    Returns (local, remote).
+
+    The split matters: the curated list must always survive truncation, because
+    it is the only set that is audited. Remote lists are a bonus and get sampled
+    when the rule budget is tight.
+    """
     spec = load_sources()
-    domains: set[str] = set()
+    local: set[str] = set()
+    remote: set[str] = set()
 
     for source in spec["sources"]:
         if not source.get("enabled"):
             continue
 
-        before = len(domains)
+        before = len(local) + len(remote)
         if "path" in source:
             path = ROOT / source["path"]
             if path.exists():
-                domains |= read_hosts_file(path)
+                local |= read_hosts_file(path)
         elif "url" in source and not offline:
             body = fetch(source["url"])
             if body:
                 tmp = ROOT / ".cache" / f"{source['id']}.txt"
                 tmp.parent.mkdir(exist_ok=True)
                 tmp.write_text(body, encoding="utf-8")
-                domains |= read_hosts_file(tmp)
-        print(f"  {source['id']}: +{len(domains) - before}")
+                remote |= read_hosts_file(tmp)
+        print(f"  {source['id']}: +{len(local) + len(remote) - before}")
 
-    return domains
+    return local, remote - local
+
+
+def even_sample(items: list[str], budget: int) -> list[str]:
+    """
+    Take a deterministic, spread-out sample instead of a prefix.
+
+    A plain `sorted(...)[:budget]` truncation would keep only domains starting
+    with 'a' through roughly 'c' and drop everything else - coverage would
+    collapse for no reason. Striding across the sorted list keeps the same
+    determinism while spreading the loss evenly.
+    """
+    if budget >= len(items):
+        return items
+    if budget <= 0:
+        return []
+    stride = len(items) / budget
+    picked = [items[min(int(i * stride), len(items) - 1)] for i in range(budget)]
+    # Striding can repeat an index when the ratio is close to 1.
+    return list(dict.fromkeys(picked))
 
 
 def to_rules(domains: set[str], start_id: int = 1) -> list[dict]:
@@ -123,13 +150,22 @@ def main() -> int:
     max_total = int(spec.get("maxTotalRules", 75000))
 
     print("collecting blocklists")
-    domains = collect(args.offline)
-    if not domains:
+    local, remote = collect(args.offline)
+    if not local and not remote:
         print("error: no domains collected", file=sys.stderr)
         return 1
 
-    ordered = sorted(domains)[:max_total]
-    dropped = len(domains) - len(ordered)
+    if len(local) > max_total:
+        print(f"warning: curated list alone exceeds the budget ({len(local)} > {max_total})", file=sys.stderr)
+        ordered = sorted(local)[:max_total]
+        dropped = len(local) + len(remote) - len(ordered)
+    else:
+        budget = max_total - len(local)
+        kept_remote = even_sample(sorted(remote), budget)
+        ordered = sorted(local | set(kept_remote))
+        dropped = len(remote) - len(kept_remote)
+
+    print(f"  budget {max_total}: {len(local)} curated + {len(ordered) - len(local)} remote")
 
     RULES_DIR.mkdir(parents=True, exist_ok=True)
     for stale in RULES_DIR.glob("ruleset-*.json"):

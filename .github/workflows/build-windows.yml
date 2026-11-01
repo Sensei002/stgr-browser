@@ -1,11 +1,15 @@
 name: build-windows
 
 # Tag push  -> builds and publishes the installer to GitHub Releases.
-# Manual    -> builds and uploads a workflow artifact only (no release).
+# Main push -> builds and uploads a workflow artifact, so the pipeline is
+#              exercised on every merge instead of only at release time.
+# Manual    -> builds and uploads a workflow artifact (publish opt-in).
 on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       publish:

@@ -65,8 +65,13 @@ domain-anchored.
 | Source set | Domains | Ruleset size |
 |---|---|---|
 | `stgr-core` only (offline) | ~100 | ~12 KiB |
-| `stgr-core` + StevenBlack unified | ~75 000 (capped) | ~4 MB |
+| `stgr-core` + StevenBlack unified | 30 000 (budget) | ~2.5 MB |
 
-The cap is `maxTotalRules` in `sources.json`. Rules beyond the cap are dropped from the tail
-of the sorted list and reported as a warning — raise the cap only if you have measured the
-memory cost of the larger matcher.
+The budget is `maxTotalRules` in `sources.json`, set to **30 000** — Chromium's
+`GUARANTEED_MINIMUM_STATIC_RULES`. Above that an extension competes for a global pool shared
+with every other installed extension and rules can be silently dropped, which presents as
+"the ad blocker stopped working" with no error anywhere. Do not raise it casually.
+
+When the remote list overflows the budget, the curated list is kept in full and the remote
+list is **evenly sampled** across its sorted order rather than truncated. A prefix cut would
+keep only domains starting with `a`–`c` and lose coverage everywhere else.

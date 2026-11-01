@@ -21,17 +21,16 @@ disagrees with the code, this file is stale — fix it.
 | Flags / profiles | Done | `--print-flags` output reviewed for balanced + lowmem |
 | Preferences / policies | Written | Not yet applied to a live profile |
 | Build orchestrator | Written | `py_compile` + flag parsing only |
-| NSIS installer | Written | **Never compiled** — CI dry-run job will be the first |
-| CI validation workflow | Written | **Never executed** |
-| Release workflow | Written | **Never executed** |
+| NSIS installer | Written | **Never compiled successfully yet** — see run 1 below |
+| CI `validate` job | **Green** | Run 41279651720, all 13 steps passed |
+| Release workflow | Written | Never executed (needs a tag or a main push) |
 | Stage 2 patch series | Scaffolded only | No patches written yet |
 
 ### The honest summary
 
-Every file exists and is internally consistent, but **the pipeline has never run end to end**.
-The first `git push` will be the first real test. Expect the first run to fail on something
-small — a path with a space, an NSIS define, a Pillow version difference. That is normal for
-a first build; the troubleshooting table in [BUILD.md](BUILD.md) covers the likely candidates.
+`ci / validate` is green on `main`. Everything downstream of it — the installer build, the
+release — has still never completed. Expect the first `build-windows` run to fail on
+something small; that is what it is there to find.
 
 ---
 
@@ -83,12 +82,30 @@ a first build; the troubleshooting table in [BUILD.md](BUILD.md) covers the like
 
 ## Session log
 
-### 2026-11-01 — initial scaffold
+### 2026-11-01 (b) — first CI run, three fixes
+**Done:** pushed to `github.com/Sensei002/stgr-browser`. `ci / validate` green (13/13).
+`ci / installer compiles` failed at the NSIS step and was fixed:
+- **Root cause:** the stub compile passed `$PWD` to `makensis.exe`. Git Bash gives a POSIX
+  path (`/d/a/repo/repo/...`) which a native Windows binary cannot resolve. Switched to
+  relative paths. This is the single most likely bug class in any `shell: bash` step that
+  invokes a Windows executable — check for it first.
+- **Also fixed:** the DNR budget was 75 000 rules, above Chromium's
+  `GUARANTEED_MINIMUM_STATIC_RULES` of 30 000. Above that, rules compete for a global pool
+  and can be dropped silently — indistinguishable from "blocking stopped working". Budget
+  lowered to 30 000, and overflow is now sampled evenly across the sorted remote list instead
+  of truncated (a prefix cut would have kept only domains starting with `a`–`c`).
+- **Also added:** `build-windows` now runs on pushes to `main` as well as tags, so the
+  installer is built on every merge rather than discovered broken at release time. Publishing
+  remains gated on `ref_type == 'tag'`.
+**Left:** `build-windows` has not completed a run. That is the next thing to verify.
+**Landmines:** none new, but see the POSIX-path note above — it will recur.
+
+### 2026-11-01 (a) — initial scaffold
 **Done:** brand.json + icon pipeline; NTP (HTML/CSS/JS) with torii/pagoda scene; theme and
 shield extensions; flags/prefs/policies/blocklists; `scripts/build.py` (fetch → assemble →
 NSIS package); C# launcher with `--stgr-lowmem` and `--stgr-quit`; CI + release workflows;
 full docs set including four ADRs.
-**Left:** nothing has been executed in CI. First push is the real test. See "What to do first".
+**Left:** nothing had been executed in CI.
 **Landmines:** see the Landmines section in [AGENTS.md](../AGENTS.md). The two that will bite
 first are (a) `initial_preferences` only affecting fresh profiles, and (b) `--disable-features`
 not merging across duplicate switches.

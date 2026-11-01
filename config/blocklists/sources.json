@@ -1,7 +1,8 @@
 {
   "$comment": "Inputs for scripts/build-shield-rules.py. Lists are converted to declarativeNetRequest static rules at build time; nothing is fetched at runtime, so blocking works offline and leaks no URLs. Licences of remote lists are noted - keep them intact when redistributing.",
-  "maxRulesPerRuleset": 25000,
-  "maxTotalRules": 75000,
+  "maxRulesPerRuleset": 30000,
+  "maxTotalRules": 30000,
+  "$budgetNote": "30,000 is Chromium's GUARANTEED_MINIMUM_STATIC_RULES. Going above it means competing for a global pool shared with every other installed extension, and rules can be silently dropped - which looks exactly like 'the ad blocker stopped working'. Do not raise this without reading docs/decisions/ADR-0003.",
   "sources": [
     {
       "id": "stgr-core",

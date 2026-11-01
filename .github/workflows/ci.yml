@@ -135,13 +135,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Relative paths on purpose: makensis.exe is a native Windows binary and
+          # cannot resolve Git Bash POSIX paths such as /d/a/repo/repo/...
           mkdir -p build/stub/src build/stub/out
           cp overrides/windows/installer.nsi build/stub/
           echo "stub payload" > build/stub/src/payload.txt
           "/c/Program Files (x86)/NSIS/makensis.exe" /V2 \
             /DVERSION=0.0.0 /DVI_VERSION=0.0.0.0 \
-            /DSRCDIR="$PWD/build/stub/src" \
-            /DOUTFILE="$PWD/build/stub/out/stub.exe" \
+            /DSRCDIR=build/stub/src \
+            /DOUTFILE=build/stub/out/stub.exe \
             build/stub/installer.nsi
           test -s build/stub/out/stub.exe
           echo "nsis ok"
